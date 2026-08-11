@@ -1,0 +1,170 @@
+[
+  {
+    "id": "date-zh-format",
+    "category": "date",
+    "source": "发布日期为2026-09-15。",
+    "revision": "发布日期为2026年9月15日。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "date-en-format",
+    "category": "date",
+    "source": "Release on September 15, 2026.",
+    "revision": "Release on Sep 15th, 2026.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "money-zh-scale",
+    "category": "money",
+    "source": "预算为¥30,000。",
+    "revision": "预算为3万元。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "percentage-full-width",
+    "category": "percentage",
+    "source": "转化率是12.5%。",
+    "revision": "转化率是12.5％。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "mass-conversion",
+    "category": "measurement",
+    "source": "净重为1 kg。",
+    "revision": "净重为1000 g。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "length-conversion",
+    "category": "measurement",
+    "source": "路程为1 km。",
+    "revision": "路程为1000 m。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "duration-conversion",
+    "category": "measurement",
+    "source": "会议持续1 hour。",
+    "revision": "会议持续60 minutes。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "range-conversion",
+    "category": "range",
+    "source": "重量范围为1-2 kg。",
+    "revision": "重量范围为1000-2000 g。",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "time-format",
+    "category": "time",
+    "source": "Meeting starts at 3:00 pm.",
+    "revision": "Meeting starts at 15:00.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "version-prefix",
+    "category": "version",
+    "source": "Release v1.2.0 today.",
+    "revision": "Release 1.2.0 today.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "url-host-case",
+    "category": "url",
+    "source": "See https://EXAMPLE.com for details.",
+    "revision": "See https://example.com/ for details.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "url-path-case",
+    "category": "url",
+    "source": "See https://example.com/File for details.",
+    "revision": "See https://example.com/file for details.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "invalid-calendar-date",
+    "category": "date",
+    "source": "Deadline: 2026-99-99.",
+    "revision": "Deadline: 2026-99-99.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "invalid-day-of-month",
+    "category": "date",
+    "source": "Deadline: 2026-02-30.",
+    "revision": "Deadline: 2026-02-30.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "unrelated-single-numbers",
+    "category": "number",
+    "source": "Invoice total is 10.",
+    "revision": "Employee count is 20.",
+    "expected": { "preserved": 0, "review": 1, "added": 1 }
+  },
+  {
+    "id": "changed-date",
+    "category": "date",
+    "source": "Deadline is 2026-09-15.",
+    "revision": "Deadline is 2026-09-18.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "changed-money-currency",
+    "category": "money",
+    "source": "Budget is USD 100.",
+    "revision": "Budget is CNY 100.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "missing-url",
+    "category": "url",
+    "source": "Read https://example.com/guide for details.",
+    "revision": "Read the guide for details.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "added-date",
+    "category": "added",
+    "source": "共有10人参加。",
+    "revision": "共有10人参加，日期为2026年9月15日。",
+    "expected": { "preserved": 1, "review": 0, "added": 1 }
+  },
+  {
+    "id": "duplicate-number-count",
+    "category": "duplicates",
+    "source": "两组各10人和10人。",
+    "revision": "目前只有一组10人。",
+    "expected": { "preserved": 1, "review": 1, "added": 0 }
+  },
+  {
+    "id": "reordered-exact-facts",
+    "category": "matching",
+    "source": "Budget is $100 and the team has 20 people.",
+    "revision": "The team has 20 people and the budget is $100.",
+    "expected": { "preserved": 2, "review": 0, "added": 0 }
+  },
+  {
+    "id": "changed-two-fact-types",
+    "category": "matching",
+    "source": "Budget is $100 and the team has 20 people.",
+    "revision": "Budget is $120 and the team has 25 people.",
+    "expected": { "preserved": 0, "review": 2, "added": 0 }
+  },
+  {
+    "id": "email-case",
+    "category": "email",
+    "source": "Contact HELLO@example.com.",
+    "revision": "Contact hello@example.com.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "quoted-text",
+    "category": "quote",
+    "source": "The policy says “Human review required”.",
+    "revision": "The policy says “human review required”.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  }
+]

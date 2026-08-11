@@ -18,6 +18,7 @@ export interface Fact {
   kind: FactKind;
   raw: string;
   normalized: string;
+  valid: boolean;
   start: number;
   end: number;
   context: string;
@@ -25,6 +26,7 @@ export interface Fact {
 
 export interface ComparedFact extends Fact {
   status: FactStatus;
+  reviewReason?: "changed" | "missing" | "invalid";
   matched?: Fact;
   possibleMatch?: Fact;
 }
@@ -41,6 +43,7 @@ interface PatternDefinition {
   kind: FactKind;
   pattern: RegExp;
   normalize: (value: string) => string;
+  validate?: (value: string) => boolean;
 }
 
 const FULL_WIDTH_DIGITS = "０１２３４５６７８９";
@@ -160,6 +163,25 @@ function normalizeDate(value: string) {
   return compact(value);
 }
 
+function validateDate(value: string) {
+  const normalized = normalizeDate(value);
+  const match = normalized.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = match[3] ? Number(match[3]) : undefined;
+  if (month < 1 || month > 12) return false;
+  if (day === undefined) return true;
+
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return (
+    candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day
+  );
+}
+
 function normalizeTime(value: string) {
   const cleaned = toAscii(value).toLowerCase().replace(/\s+/g, "");
   const clock = cleaned.match(/(\d{1,2}):(\d{2})(am|pm)?/);
@@ -239,7 +261,7 @@ function normalizeMeasurement(value: string) {
   const match = cleaned.match(/(-?\d+(?:\.\d+)?)([^\d.-]+)$/u);
   if (!match) return cleaned;
   const unit = UNIT_ALIASES[match[2]] ?? match[2];
-  return `${normalizeNumber(match[1])}:${unit}`;
+  return normalizeUnitValue(Number(match[1]), unit);
 }
 
 function normalizeRange(value: string) {
@@ -249,7 +271,49 @@ function normalizeRange(value: string) {
   );
   if (!match) return cleaned;
   const unit = UNIT_ALIASES[match[3]] ?? match[3];
+  const left = normalizeUnitValue(Number(match[1]), unit);
+  const right = normalizeUnitValue(Number(match[2]), unit);
+  const [leftFamily, leftValue] = splitUnitValue(left);
+  const [rightFamily, rightValue] = splitUnitValue(right);
+
+  if (leftFamily === rightFamily) {
+    return `${leftValue}..${rightValue}:${leftFamily}`;
+  }
+
   return `${normalizeNumber(match[1])}..${normalizeNumber(match[2])}:${unit}`;
+}
+
+const UNIT_CONVERSIONS: Record<
+  string,
+  { family: string; factor: number }
+> = {
+  kg: { family: "mass-g", factor: 1_000 },
+  g: { family: "mass-g", factor: 1 },
+  mg: { family: "mass-g", factor: 0.001 },
+  km: { family: "length-m", factor: 1_000 },
+  m: { family: "length-m", factor: 1 },
+  cm: { family: "length-m", factor: 0.01 },
+  mm: { family: "length-m", factor: 0.001 },
+  day: { family: "duration-s", factor: 86_400 },
+  hour: { family: "duration-s", factor: 3_600 },
+  minute: { family: "duration-s", factor: 60 },
+  second: { family: "duration-s", factor: 1 },
+};
+
+function stableNumber(value: number) {
+  return String(Number(value.toFixed(12)));
+}
+
+function normalizeUnitValue(value: number, unit: string) {
+  const conversion = UNIT_CONVERSIONS[unit];
+  if (!conversion) return `${normalizeNumber(String(value))}:${unit}`;
+  return `${conversion.family}:${stableNumber(value * conversion.factor)}`;
+}
+
+function splitUnitValue(value: string) {
+  const separator = value.indexOf(":");
+  if (separator === -1) return ["", value] as const;
+  return [value.slice(0, separator), value.slice(separator + 1)] as const;
 }
 
 function normalizeQuote(value: string) {
@@ -261,11 +325,23 @@ function normalizeQuote(value: string) {
 }
 
 function normalizeUrl(value: string) {
-  return toAscii(value)
+  const cleaned = toAscii(value)
     .trim()
-    .replace(/[.,;:!?，。；：！？）)\]}]+$/u, "")
-    .replace(/\/$/, "")
-    .toLowerCase();
+    .replace(/[.,;:!?，。；：！？）)\]}]+$/u, "");
+
+  try {
+    const parsed = new URL(cleaned);
+    const credentials = parsed.username
+      ? `${parsed.username}${parsed.password ? `:${parsed.password}` : ""}@`
+      : "";
+    const pathname =
+      parsed.pathname === "/" && !parsed.search && !parsed.hash
+        ? ""
+        : parsed.pathname;
+    return `${parsed.protocol.toLowerCase()}//${credentials}${parsed.host.toLowerCase()}${pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return cleaned;
+  }
 }
 
 const PATTERNS: PatternDefinition[] = [
@@ -290,6 +366,7 @@ const PATTERNS: PatternDefinition[] = [
     pattern:
       /(?:19|20)\d{2}\s*(?:年|[-/.])\s*\d{1,2}(?:\s*(?:月|[-/.])\s*\d{1,2}\s*日?)?|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+(?:19|20)\d{2}\b/giu,
     normalize: normalizeDate,
+    validate: validateDate,
   },
   {
     kind: "time",
@@ -311,13 +388,13 @@ const PATTERNS: PatternDefinition[] = [
   {
     kind: "range",
     pattern:
-      /(?<![\d.])-?\d+(?:\.\d+)?\s*(?:-|–|—|~|至|到)\s*-?\d+(?:\.\d+)?\s*(?:kg|g|mg|km|cm|mm|mb|gb|tb|kb|ms|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)?(?![\d.])/giu,
+      /(?<![\d.])-?\d+(?:\.\d+)?\s*(?:-|–|—|~|至|到)\s*-?\d+(?:\.\d+)?\s*(?:kg|g|mg|km|cm|mm|mb|gb|tb|kb|ms|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)?(?!\d)(?!\.\d)/giu,
     normalize: normalizeRange,
   },
   {
     kind: "measurement",
     pattern:
-      /(?<![\d.])-?\d[\d,]*(?:\.\d+)?\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)(?![\d.])/giu,
+      /(?<![\d.])-?\d[\d,]*(?:\.\d+)?\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|g|m|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)(?![A-Z\d])/giu,
     normalize: normalizeMeasurement,
   },
   {
@@ -327,7 +404,7 @@ const PATTERNS: PatternDefinition[] = [
   },
   {
     kind: "number",
-    pattern: /(?<![\d.])-?\d[\d,]*(?:\.\d+)?(?![\d.])/gu,
+    pattern: /(?<![\d.])-?\d[\d,]*(?:\.\d+)?(?!\d)(?!\.\d)/gu,
     normalize: normalizeNumber,
   },
 ];
@@ -362,6 +439,7 @@ export function extractFacts(text: string): Fact[] {
         kind: definition.kind,
         raw,
         normalized: definition.normalize(raw),
+        valid: definition.validate?.(raw) ?? true,
         start,
         end,
         context: makeContext(text, start, end),
@@ -412,9 +490,19 @@ export function compareFacts(source: string, revision: string): FactComparison {
         candidate.normalized === fact.normalized,
     );
 
-    if (exactMatch) {
+    if (exactMatch && fact.valid && exactMatch.valid) {
       matchedRevisionIds.add(exactMatch.id);
       return { ...fact, status: "preserved", matched: exactMatch };
+    }
+
+    if (exactMatch) {
+      matchedRevisionIds.add(exactMatch.id);
+      return {
+        ...fact,
+        status: "review",
+        reviewReason: "invalid",
+        possibleMatch: exactMatch,
+      };
     }
 
     const candidates = revisionFacts
@@ -429,16 +517,27 @@ export function compareFacts(source: string, revision: string): FactComparison {
       .sort((a, b) => b.score - a.score);
 
     const possible = candidates[0];
-    if (possible && (possible.score >= 0.14 || candidates.length === 1)) {
+    const runnerUp = candidates[1];
+
+    if (
+      possible &&
+      possible.score >= 0.25 &&
+      (!runnerUp || possible.score - runnerUp.score >= 0.08)
+    ) {
       matchedRevisionIds.add(possible.candidate.id);
       return {
         ...fact,
         status: "review",
+        reviewReason: fact.valid ? "changed" : "invalid",
         possibleMatch: possible.candidate,
       };
     }
 
-    return { ...fact, status: "review" };
+    return {
+      ...fact,
+      status: "review",
+      reviewReason: fact.valid ? "missing" : "invalid",
+    };
   });
 
   const addedFacts = revisionFacts.filter(

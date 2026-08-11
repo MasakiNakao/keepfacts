@@ -1,6 +1,6 @@
 # KeepFacts
 
-[简体中文](README.zh-CN.md) · [Live demo](https://keepfacts.tiankongmi.chatgpt.site)
+[简体中文](README.zh-CN.md) · [Live demo](https://masakinakao.github.io/keepfacts/)
 
 **Change the wording, not the facts.**
 
@@ -50,6 +50,13 @@ Create a production build:
 ```bash
 npm run build
 ```
+
+## Validation
+
+The repository includes a public, data-driven validation corpus covering
+preserved, changed, missing, added, duplicate, and false-positive boundary
+cases. See [VALIDATION.md](VALIDATION.md) for the current snapshot, reproduction
+steps, matching guarantees, and known limitations.
 
 ## How matching works
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   compareFacts,
   type ComparedFact,
@@ -56,12 +56,13 @@ const copy = {
     preservedNote: "改写稿中找到等价事实",
     possibleChange: "可能改成了",
     missingNote: "改写稿中未找到对应事实",
+    invalidNote: "日期格式可识别，但数值超出有效范围",
     addedNote: "只在改写稿中出现",
     sourceContext: "原文语境",
     revisionContext: "改写语境",
     disclaimer:
       "KeepFacts 当前只检查可精确比对的硬事实，不判断整段文字的语义是否正确。黄色项目需要你人工确认。",
-    footer: "实验版 v0.1 · 确定性规则 · 无追踪代码",
+    footer: "实验版 v0.1.1 · 确定性规则 · 无追踪代码",
     changeLanguage: "English",
   },
   en: {
@@ -95,12 +96,13 @@ const copy = {
     preservedNote: "Equivalent fact found in the rewrite",
     possibleChange: "Possibly changed to",
     missingNote: "No corresponding fact found in the rewrite",
+    invalidNote: "Date-like value found, but it is outside the valid calendar range",
     addedNote: "Appears only in the rewrite",
     sourceContext: "Source context",
     revisionContext: "Rewrite context",
     disclaimer:
       "KeepFacts currently checks exact, extractable facts only. It does not judge whether the full meaning is correct. Yellow items need human review.",
-    footer: "Experimental v0.1 · Deterministic rules · No tracking",
+    footer: "Experimental v0.1.1 · Deterministic rules · No tracking",
     changeLanguage: "中文",
   },
 };
@@ -150,11 +152,13 @@ function ResultCard({
   const statusText =
     status === "preserved"
       ? t.preservedNote
-      : status === "added"
-        ? t.addedNote
-        : compared.possibleMatch
-          ? t.possibleChange
-          : t.missingNote;
+        : status === "added"
+          ? t.addedNote
+          : compared.reviewReason === "invalid"
+            ? t.invalidNote
+            : compared.possibleMatch
+              ? t.possibleChange
+              : t.missingNote;
 
   return (
     <article className={`result-card result-${status}`}>
@@ -166,7 +170,9 @@ function ResultCard({
           <span className="kind-label">{kindLabels[locale][fact.kind]}</span>
           <div className="fact-comparison">
             <code className="fact-value">{fact.raw}</code>
-            {status === "review" && compared.possibleMatch ? (
+            {status === "review" &&
+            compared.possibleMatch &&
+            compared.reviewReason !== "invalid" ? (
               <>
                 <span className="comparison-arrow" aria-hidden="true">
                   →
@@ -201,6 +207,10 @@ export default function Home() {
   const [hasRun, setHasRun] = useState(true);
   const [filter, setFilter] = useState<Filter>("review");
   const t = copy[locale];
+
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  }, [locale]);
 
   const comparison = useMemo(
     () => compareFacts(source, revision),
@@ -275,7 +285,7 @@ export default function Home() {
             K
           </span>
           <span>KeepFacts</span>
-          <span className="version-tag">v0.1</span>
+          <span className="version-tag">v0.1.1</span>
         </a>
         <div className="header-actions">
           <span className="privacy-badge">

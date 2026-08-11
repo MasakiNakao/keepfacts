@@ -1,6 +1,6 @@
 # KeepFacts
 
-[English](README.md) · [在线体验](https://keepfacts.tiankongmi.chatgpt.site)
+[English](README.md) · [在线体验](https://masakinakao.github.io/keepfacts/)
 
 **措辞可以改变，事实不该走样。**
 
@@ -35,6 +35,10 @@ npm run dev
 ```bash
 npm test
 ```
+
+## 公开验证
+
+仓库包含一组数据驱动的公开验证样本，覆盖事实保留、修改、遗漏、新增、重复和误报边界。当前验证快照、复现步骤、匹配保证和已知限制见 [VALIDATION.md](VALIDATION.md)。
 
 ## 后续方向
 

@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { compareFacts, extractFacts } from "../src/lib/facts.ts";
+
+interface ValidationCase {
+  id: string;
+  category: string;
+  source: string;
+  revision: string;
+  expected: {
+    preserved: number;
+    review: number;
+    added: number;
+  };
+}
+
+const validationCases = JSON.parse(
+  readFileSync(new URL("./validation-cases.json", import.meta.url), "utf8"),
+) as ValidationCase[];
 
 test("extracts common hard facts without overlapping nested numbers", () => {
   const facts = extractFacts(
@@ -66,4 +83,67 @@ test("reports facts introduced only in the rewrite", () => {
   assert.equal(comparison.preservedCount, 1);
   assert.equal(comparison.addedCount, 1);
   assert.equal(comparison.addedFacts[0]?.kind, "date");
+});
+
+test("preserves URL host casing but not case-sensitive path changes", () => {
+  const hostOnly = compareFacts(
+    "See https://EXAMPLE.com.",
+    "See https://example.com/.",
+  );
+  const pathChange = compareFacts(
+    "See https://example.com/File.",
+    "See https://example.com/file.",
+  );
+
+  assert.equal(hostOnly.preservedCount, 1);
+  assert.equal(pathChange.preservedCount, 0);
+  assert.equal(pathChange.reviewCount, 1);
+});
+
+test("normalizes safe mass, length, duration, and range conversions", () => {
+  const comparison = compareFacts(
+    "重1 kg，长1 km，持续1 hour，范围1-2 kg。",
+    "重1000 g，长1000 m，持续60 minutes，范围1000-2000 g。",
+  );
+
+  assert.equal(comparison.preservedCount, 4);
+  assert.equal(comparison.reviewCount, 0);
+});
+
+test("does not force unrelated single numbers into a possible match", () => {
+  const comparison = compareFacts(
+    "Invoice total is 10.",
+    "Employee count is 20.",
+  );
+
+  assert.equal(comparison.reviewCount, 1);
+  assert.equal(comparison.addedCount, 1);
+  assert.equal(comparison.sourceFacts[0]?.reviewReason, "missing");
+});
+
+test("flags impossible calendar dates for review", () => {
+  const comparison = compareFacts(
+    "Deadline: 2026-02-30.",
+    "Deadline: 2026-02-30.",
+  );
+
+  assert.equal(comparison.preservedCount, 0);
+  assert.equal(comparison.reviewCount, 1);
+  assert.equal(comparison.sourceFacts[0]?.reviewReason, "invalid");
+});
+
+test("passes the public validation corpus", () => {
+  for (const validationCase of validationCases) {
+    const comparison = compareFacts(
+      validationCase.source,
+      validationCase.revision,
+    );
+    const actual = {
+      preserved: comparison.preservedCount,
+      review: comparison.reviewCount,
+      added: comparison.addedCount,
+    };
+
+    assert.deepEqual(actual, validationCase.expected, validationCase.id);
+  }
 });

@@ -4,7 +4,7 @@
 
 [![在线体验](https://img.shields.io/badge/在线体验-打开-0f5d46)](https://masakinakao.github.io/keepfacts/)
 [![CI](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml/badge.svg)](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/MasakiNakao/keepfacts)](https://github.com/MasakiNakao/keepfacts/releases/latest)
+[![最新标签](https://img.shields.io/github/v/tag/MasakiNakao/keepfacts?sort=semver)](https://github.com/MasakiNakao/keepfacts/tags)
 [![License](https://img.shields.io/github/license/MasakiNakao/keepfacts)](LICENSE)
 
 **措辞可以改变，事实不该走样。**

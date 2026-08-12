@@ -2,19 +2,14 @@
 
 All notable changes to KeepFacts will be documented here.
 
-## [0.1.2] - 2026-08-11
-
-### Added
-
-- Optional must-preserve names, terms, and key phrases, entered one per line.
-- Copyable and downloadable Markdown reports for completed comparisons.
-- Product screenshot, project badges, and a 30-second walkthrough in both READMEs.
-- Tests for custom required content and deterministic report generation.
+## [0.1.3] - 2026-08-12
 
 ### Changed
 
 - Automatic fact retention and must-preserve checks are now reported separately.
 - Matching repeated facts now uses context-aware one-to-one pairing.
+- Centralized the displayed version on package metadata and added automated
+  release-consistency checks.
 - Refreshed responsive result controls for desktop and mobile layouts.
 
 ### Fixed
@@ -25,7 +20,27 @@ All notable changes to KeepFacts will be documented here.
 - Mark results as outdated after input edits until the user checks again.
 - Update Vite to 8.2.1 to resolve known development-server advisories.
 
-## [0.1.1] - 2026-08-08
+### Security
+
+- Audit production dependencies in CI and deploy tagged builds only after the
+  complete validation suite passes.
+- Pin GitHub Actions to immutable commits and enable weekly dependency updates.
+
+## [0.1.2] - 2026-08-12
+
+### Added
+
+- Optional must-preserve names, terms, and key phrases, entered one per line.
+- Copyable and downloadable Markdown reports for completed comparisons.
+- Product screenshot, project badges, and a 30-second walkthrough in both READMEs.
+- Tests for custom required content and deterministic report generation.
+
+### Changed
+
+- Result totals and retention now include user-defined must-preserve content.
+- Refreshed responsive result controls for desktop and mobile layouts.
+
+## [0.1.1] - 2026-08-11
 
 ### Added
 

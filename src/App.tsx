@@ -6,6 +6,7 @@ import {
   type FactKind,
 } from "./lib/facts";
 import { buildMarkdownReport, formatLocalDate } from "./lib/report";
+import { APP_VERSION } from "./version";
 
 type Locale = "zh" | "en";
 type Filter = "all" | "review" | "preserved" | "added";
@@ -84,7 +85,8 @@ const copy = {
     revisionContext: "改写语境",
     disclaimer:
       "KeepFacts 当前只检查可精确比对的硬事实，不判断整段文字的语义是否正确。黄色项目需要你人工确认。",
-    footer: "实验版 v0.1.2 · 确定性规则 · 无追踪代码",
+    footerPrefix: "实验版",
+    footer: "确定性规则 · 无追踪代码",
     changeLanguage: "English",
   },
   en: {
@@ -145,7 +147,8 @@ const copy = {
     revisionContext: "Rewrite context",
     disclaimer:
       "KeepFacts currently checks exact, extractable facts only. It does not judge whether the full meaning is correct. Yellow items need human review.",
-    footer: "Experimental v0.1.2 · Deterministic rules · No tracking",
+    footerPrefix: "Experimental",
+    footer: "Deterministic rules · No tracking",
     changeLanguage: "中文",
   },
 };
@@ -425,7 +428,7 @@ export default function Home() {
             K
           </span>
           <span>KeepFacts</span>
-          <span className="version-tag">v0.1.2</span>
+          <span className="version-tag">v{APP_VERSION}</span>
         </a>
         <div className="header-actions">
           <span className="privacy-badge">
@@ -698,7 +701,9 @@ export default function Home() {
 
       <footer>
         <span>KeepFacts</span>
-        <p>{t.footer}</p>
+        <p>
+          {t.footerPrefix} v{APP_VERSION} · {t.footer}
+        </p>
       </footer>
     </main>
   );

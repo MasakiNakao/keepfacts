@@ -4,7 +4,7 @@
 
 [![Live demo](https://img.shields.io/badge/live-demo-0f5d46)](https://masakinakao.github.io/keepfacts/)
 [![CI](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml/badge.svg)](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/MasakiNakao/keepfacts)](https://github.com/MasakiNakao/keepfacts/releases/latest)
+[![Latest tag](https://img.shields.io/github/v/tag/MasakiNakao/keepfacts?sort=semver)](https://github.com/MasakiNakao/keepfacts/tags)
 [![License](https://img.shields.io/github/license/MasakiNakao/keepfacts)](LICENSE)
 
 **Change the wording, not the facts.**

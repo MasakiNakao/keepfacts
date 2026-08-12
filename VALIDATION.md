@@ -18,10 +18,10 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.1.3 snapshot
+## v0.1.4 snapshot
 
-- 30 public validation cases
-- 25 automated tests
+- 37 public validation cases
+- 36 automated tests
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
@@ -29,7 +29,8 @@ facts. The test runner fails when any result changes unexpectedly.
 
 The corpus covers dates, times, money, percentages, measurements, numeric
 ranges, versions, URLs, emails, quoted text, standalone numbers, duplicate
-facts, and reordered exact facts.
+facts, reordered facts, arbitrary-precision decimals, signed values, full-width
+numeric forms, and false-positive text boundaries.
 
 Passing this corpus is a regression guarantee for these named cases. It is not
 an accuracy percentage and should not be interpreted as proof that KeepFacts
@@ -41,15 +42,18 @@ KeepFacts safely normalizes a deliberately limited set of equivalent forms:
 
 - common Chinese and English date formats;
 - currency formatting such as `¥30,000` and `3万元`;
+- signed and arbitrary-precision decimal values without IEEE-754 rounding;
 - mass (`kg`, `g`, `mg`), length (`km`, `m`, `cm`, `mm`), and fixed-duration
   units (`day`, `hour`, `minute`, `second`);
 - URL scheme and host casing while preserving case-sensitive paths;
 - repeated facts using context-aware, one-to-one matching, including reordered
   duplicates and values that swap between subjects.
 
-Impossible calendar dates are shown for review. Changed facts are paired only
-when their nearby wording is sufficiently similar and the best candidate is
-not ambiguous.
+Impossible calendar dates and times are shown for review. Changed facts are
+paired only when their nearby wording is sufficiently similar and the best
+candidate is not ambiguous. Full-width digits and common full-width separators
+are normalized before recognition while result offsets still point to the
+original text.
 
 ## Known limitations
 

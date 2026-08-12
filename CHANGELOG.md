@@ -2,6 +2,25 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.1.4] - 2026-08-12
+
+### Changed
+
+- Run the full fact comparison only when requested instead of on every input
+  keystroke, keeping large drafts responsive.
+- Use precision-safe decimal normalization for numbers, money, measurements,
+  and ranges.
+- Improve repeated-fact association across reordered prose and list formats.
+
+### Fixed
+
+- Preserve numeric sign semantics and compound currency identifiers.
+- Validate impossible time values and route dotted calendar dates through date
+  validation instead of treating them as versions.
+- Avoid interpreting contractions and possessives as quoted facts.
+- Handle common full-width numeric forms without splitting them into misleading
+  partial facts.
+
 ## [0.1.3] - 2026-08-12
 
 ### Changed

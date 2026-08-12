@@ -208,5 +208,54 @@
     "source": "The policy says “Human review required”.",
     "revision": "The policy says “human review required”.",
     "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "large-adjacent-integers",
+    "category": "precision",
+    "source": "Reference 9007199254740992.",
+    "revision": "Reference 9007199254740993.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "negative-percentage-change",
+    "category": "percentage",
+    "source": "Margin is -5%.",
+    "revision": "Margin is 5%.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "negative-to-positive-change",
+    "category": "number",
+    "source": "Delta is -5.",
+    "revision": "Delta is +5.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "compound-currency-change",
+    "category": "money",
+    "source": "Price is CAD $100.",
+    "revision": "Price is USD $100.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "dotted-date-equivalence",
+    "category": "date",
+    "source": "Deadline is 2026.09.15.",
+    "revision": "Deadline is 2026/09/15.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "invalid-time",
+    "category": "time",
+    "source": "Meeting starts at 25:99.",
+    "revision": "Meeting starts at 25:99.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "natural-separator-duplicate-context",
+    "category": "matching",
+    "source": "Alpha 100 and Beta 100.",
+    "revision": "Beta 100 and Alpha 80.",
+    "expected": { "preserved": 1, "review": 1, "added": 0 }
   }
 ]

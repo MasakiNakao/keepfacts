@@ -41,8 +41,9 @@ It is intentionally narrow:
 - Versions and numeric ranges
 - URLs and email addresses
 - Quoted text and standalone numbers
-- Duplicate facts using occurrence-aware matching
-- Chinese and English formatting equivalence for common facts
+- Duplicate and reordered facts using context-aware, one-to-one matching
+- Precision-safe signed numbers plus common Chinese, English, and full-width
+  formatting equivalence
 - User-defined names, terms, and phrases that must be preserved, reported separately from automatic fact retention
 - Copyable and downloadable Markdown review reports
 
@@ -76,7 +77,7 @@ steps, matching guarantees, and known limitations.
 
 ## How matching works
 
-KeepFacts extracts facts in priority order so nested numbers are not counted twice. It then normalizes safe formatting differences—for example, `¥30,000` and `3万元`—and performs occurrence-aware matching. Unmatched facts are shown as missing, possibly changed, or newly introduced.
+KeepFacts extracts facts in priority order so nested numbers are not counted twice. It then normalizes safe formatting differences—for example, `¥30,000` and `3万元`—using exact decimal strings rather than floating-point arithmetic. Context-aware, one-to-one matching keeps repeated or reordered values attached to the most likely subject. Unmatched facts are shown as missing, possibly changed, or newly introduced.
 
 No model is used in this process. The result is fast and reproducible, but deliberately limited to facts the rules can identify.
 

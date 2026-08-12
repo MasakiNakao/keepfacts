@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   compareFacts,
+  countRequiredNotInSource,
   type ComparedFact,
   type Fact,
   type FactKind,
@@ -269,6 +270,9 @@ export default function Home() {
     revision: examples.zh.revision,
     required: examples.zh.required,
   });
+  const [comparison, setComparison] = useState(() =>
+    compareFacts(examples.zh.source, examples.zh.revision, examples.zh.required),
+  );
   const [hasRun, setHasRun] = useState(true);
   const [filter, setFilter] = useState<Filter>("review");
   const [reportFeedback, setReportFeedback] = useState("");
@@ -288,19 +292,7 @@ export default function Home() {
     [],
   );
 
-  const comparison = useMemo(
-    () =>
-      compareFacts(
-        checkedInput.source,
-        checkedInput.revision,
-        checkedInput.required,
-      ),
-    [checkedInput],
-  );
-  const draftComparison = useMemo(
-    () => compareFacts(source, revision, required),
-    [source, revision, required],
-  );
+  const requiredNotInSourceCount = countRequiredNotInSource(source, required);
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
@@ -327,6 +319,9 @@ export default function Home() {
     setRevision(example.revision);
     setRequired(example.required);
     setCheckedInput(example);
+    setComparison(
+      compareFacts(example.source, example.revision, example.required),
+    );
     setHasRun(true);
     setFilter("review");
   };
@@ -336,14 +331,17 @@ export default function Home() {
     setRevision("");
     setRequired("");
     setCheckedInput({ source: "", revision: "", required: "" });
+    setComparison(compareFacts("", "", ""));
     setHasRun(false);
     setFilter("all");
   };
 
   const runComparison = () => {
+    const nextComparison = compareFacts(source, revision, required);
     setCheckedInput({ source, revision, required });
+    setComparison(nextComparison);
     setHasRun(true);
-    setFilter(draftComparison.reviewCount ? "review" : "all");
+    setFilter(nextComparison.reviewCount ? "review" : "all");
     window.requestAnimationFrame(() => {
       document
         .getElementById("results")
@@ -536,10 +534,8 @@ export default function Home() {
             spellCheck="false"
           />
           <p className="required-input-feedback" role="status" aria-live="polite">
-            {draftComparison.requiredNotInSourceCount
-              ? t.requiredInputWarning(
-                  draftComparison.requiredNotInSourceCount,
-                )
+            {requiredNotInSourceCount
+              ? t.requiredInputWarning(requiredNotInSourceCount)
               : ""}
           </p>
         </details>

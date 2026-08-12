@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { compareFacts, extractFacts } from "../src/lib/facts.ts";
+import {
+  compareFacts,
+  countRequiredNotInSource,
+  extractFacts,
+} from "../src/lib/facts.ts";
 import { buildMarkdownReport } from "../src/lib/report.ts";
 
 interface ValidationCase {
@@ -47,6 +51,165 @@ test("normalizes equivalent dates, money, and units across formats", () => {
 
   assert.equal(comparison.reviewCount, 0);
   assert.equal(comparison.preservedCount, 3);
+});
+
+test("keeps arbitrary precision for numbers, money, and measurements", () => {
+  for (const [source, revision] of [
+    ["Reference 9007199254740992.", "Reference 9007199254740993."],
+    [
+      "Balance $9,007,199,254,740,992.",
+      "Balance $9,007,199,254,740,993.",
+    ],
+    ["Dose 0.0000000000004 g.", "Dose 0 g."],
+  ]) {
+    const comparison = compareFacts(source, revision);
+    assert.equal(comparison.preservedCount, 0, source);
+    assert.equal(comparison.reviewCount, 1, source);
+  }
+
+  assert.equal(
+    extractFacts("0.001 kg and 1 g")[0]?.normalized,
+    extractFacts("0.001 kg and 1 g")[1]?.normalized,
+  );
+  assert.equal(extractFacts("人民币0.000000001亿")[0]?.normalized, "CNY:0.1");
+});
+
+test("recognizes prefixed Chinese currency names and anchors money suffixes", () => {
+  for (const [raw, normalized] of [
+    ["人民币0.000000001亿", "CNY:0.1"],
+    ["美元0.01万", "USD:100"],
+    ["欧元2", "EUR:2"],
+    ["英镑2", "GBP:2"],
+    ["日元2", "JPY:2"],
+    ["港元2", "HKD:2"],
+    ["加元2", "CAD:2"],
+    ["澳元2", "AUD:2"],
+    ["RMB100", "CNY:100"],
+    ["RMB100m", "CNY:100000000"],
+  ] as const) {
+    const fact = extractFacts(raw)[0];
+    assert.equal(fact?.kind, "money", raw);
+    assert.equal(fact?.normalized, normalized, raw);
+  }
+});
+
+test("preserves signs and compound currency identity", () => {
+  assert.deepEqual(
+    extractFacts("Delta +5, ＋6, and ﹢7.")
+      .filter((fact) => fact.kind === "number")
+      .map(({ raw, normalized }) => ({ raw, normalized })),
+    [
+      { raw: "+5", normalized: "5" },
+      { raw: "＋6", normalized: "6" },
+      { raw: "﹢7", normalized: "7" },
+    ],
+  );
+
+  for (const [source, revision] of [
+    ["Delta -5.", "Delta +5."],
+    ["Delta -5.", "Delta ＋5."],
+    ["Delta -5.", "Delta ﹢5."],
+    ["Margin -5%.", "Margin 5%."],
+    ["Balance -$100.", "Balance $100."],
+    ["Balance $-100.", "Balance $100."],
+    ["Price CAD $100.", "Price USD $100."],
+    ["Loss ($100).", "Loss $100."],
+  ]) {
+    const comparison = compareFacts(source, revision);
+    assert.equal(comparison.preservedCount, 0, source);
+    assert.equal(comparison.reviewCount, 1, source);
+    assert.equal(comparison.addedCount, 0, source);
+  }
+});
+
+test("treats dotted calendar years as dates before bare versions", () => {
+  const equivalent = compareFacts(
+    "Deadline 2026.09.15.",
+    "Deadline 2026/09/15.",
+  );
+  const invalid = compareFacts(
+    "Deadline 2026.02.30.",
+    "Deadline 2026.02.30.",
+  );
+
+  assert.equal(equivalent.preservedCount, 1);
+  assert.equal(equivalent.sourceFacts[0]?.kind, "date");
+  assert.equal(invalid.sourceFacts[0]?.kind, "date");
+  assert.equal(invalid.sourceFacts[0]?.reviewReason, "invalid");
+});
+
+test("flags recognizable invalid times", () => {
+  for (const value of ["25:99", "25点99分", "13:00 pm"]) {
+    const comparison = compareFacts(`Starts ${value}.`, `Starts ${value}.`);
+    assert.equal(comparison.sourceFacts[0]?.kind, "time", value);
+    assert.equal(comparison.sourceFacts[0]?.reviewReason, "invalid", value);
+  }
+});
+
+test("extracts full-width numeric facts without changing source offsets", () => {
+  const source = "预算￥３０，０００，日期２０２６．０９．１５，人数１００人。";
+  const facts = extractFacts(source);
+
+  assert.deepEqual(
+    facts.map(({ kind, raw, normalized }) => ({ kind, raw, normalized })),
+    [
+      { kind: "money", raw: "￥３０，０００", normalized: "CNY:30000" },
+      { kind: "date", raw: "２０２６．０９．１５", normalized: "2026-09-15" },
+      { kind: "measurement", raw: "１００人", normalized: "100:person" },
+    ],
+  );
+  for (const fact of facts) {
+    assert.equal(source.slice(fact.start, fact.end), fact.raw);
+  }
+});
+
+test("does not treat contractions and possessives as quoted facts", () => {
+  const facts = extractFacts("Don't change Bob's 10 users.");
+  assert.equal(facts.some((fact) => fact.kind === "quote"), false);
+});
+
+test("matches reordered duplicates across natural separators", () => {
+  for (const separator of [" and ", " 和 ", "、", " • ", " — ", "\t"]) {
+    const comparison = compareFacts(
+      `Alpha 100${separator}Beta 100`,
+      `Beta 100${separator}Alpha 80`,
+    );
+    const values = comparison.sourceFacts.filter((fact) => fact.raw === "100");
+    assert.equal(values[0]?.possibleMatch?.raw, "80", separator);
+    assert.equal(values[1]?.matched?.raw, "100", separator);
+    assert.equal(comparison.addedCount, 0, separator);
+  }
+});
+
+test("keeps comparison target ids one-to-one and totals internally consistent", () => {
+  const comparison = compareFacts(
+    "Alpha 10. Beta 20. Gamma 30.",
+    "Beta 30. Gamma 10. Alpha 20. Delta 40.",
+  );
+  const targetIds = comparison.sourceFacts
+    .map((fact) => fact.matched?.id ?? fact.possibleMatch?.id)
+    .filter((id): id is string => Boolean(id));
+
+  assert.equal(new Set(targetIds).size, targetIds.length);
+  assert.equal(
+    comparison.preservedCount + comparison.reviewCount,
+    comparison.sourceFacts.length,
+  );
+  assert.equal(comparison.addedCount, comparison.addedFacts.length);
+  assert.equal(
+    targetIds.length + comparison.addedFacts.length,
+    extractFacts("Beta 30. Gamma 10. Alpha 20. Delta 40.").length,
+  );
+});
+
+test("counts invalid required entries without extracting automatic facts", () => {
+  assert.equal(
+    countRequiredNotInSource(
+      "Acme launches Project Atlas with 100 users.",
+      "Acme\nProject Atlas\nVIP\nVIP",
+    ),
+    1,
+  );
 });
 
 test("flags changed and missing source facts", () => {
@@ -263,6 +426,19 @@ test("deduplicates required content and avoids partial English-word matches", ()
   assert.equal(requiredFacts.length, 2);
   assert.equal(requiredFacts[0]?.status, "review");
   assert.equal(requiredFacts[1]?.status, "review");
+});
+
+test("uses Unicode word boundaries without blocking embedded Chinese phrases", () => {
+  assert.equal(countRequiredNotInSource("Only cafetería is available.", "café"), 1);
+  assert.equal(countRequiredNotInSource("Only cafés are available.", "café"), 1);
+  assert.equal(countRequiredNotInSource("请务必保留这段原文。", "必保留"), 0);
+
+  const comparison = compareFacts(
+    "请务必保留这段原文。",
+    "新稿仍必保留这段原文。",
+    "必保留",
+  );
+  assert.equal(comparison.requiredPreservedCount, 1);
 });
 
 test("keeps must-preserve checks separate from automatic fact totals", () => {

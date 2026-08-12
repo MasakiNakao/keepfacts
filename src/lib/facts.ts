@@ -72,14 +72,109 @@ function compact(value: string) {
     .trim();
 }
 
+interface ExactDecimal {
+  coefficient: bigint;
+  scale: number;
+}
+
+function normalizeNumericChars(value: string) {
+  return toAscii(value)
+    .replace(/[−﹣－]/gu, "-")
+    .replace(/[＋﹢]/gu, "+")
+    .replace(/，/gu, ",");
+}
+
+function compactExact(value: string) {
+  return normalizeNumericChars(value)
+    .toLowerCase()
+    .replace(/\s+/gu, "")
+    .trim();
+}
+
+function canonicalDecimal(
+  coefficient: bigint,
+  scale: number,
+): ExactDecimal {
+  if (!Number.isSafeInteger(scale) || scale < 0) {
+    throw new RangeError("invalid decimal scale");
+  }
+  if (coefficient === 0n) return { coefficient: 0n, scale: 0 };
+  while (scale > 0 && coefficient % 10n === 0n) {
+    coefficient /= 10n;
+    scale -= 1;
+  }
+  return { coefficient, scale };
+}
+
+function parseDecimal(value: string): ExactDecimal | null {
+  const cleaned = normalizeNumericChars(value).trim();
+  const match = cleaned.match(
+    /^([+-]?)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?$/u,
+  );
+  if (!match) return null;
+
+  const fraction = match[3] ?? "";
+  const digits = `${match[2].replace(/,/gu, "")}${fraction}`;
+  const sign = match[1] === "-" ? -1n : 1n;
+  return canonicalDecimal(sign * BigInt(digits), fraction.length);
+}
+
+function multiplyDecimal(left: ExactDecimal, right: ExactDecimal) {
+  return canonicalDecimal(
+    left.coefficient * right.coefficient,
+    left.scale + right.scale,
+  );
+}
+
+function decimalKey(value: ExactDecimal) {
+  const canonical = canonicalDecimal(value.coefficient, value.scale);
+  if (canonical.coefficient === 0n) return "0";
+
+  const negative = canonical.coefficient < 0n;
+  let digits = (negative
+    ? -canonical.coefficient
+    : canonical.coefficient
+  ).toString();
+  if (canonical.scale > 0) {
+    digits = digits.padStart(canonical.scale + 1, "0");
+    const point = digits.length - canonical.scale;
+    digits = `${digits.slice(0, point)}.${digits.slice(point)}`;
+  }
+  return `${negative ? "-" : ""}${digits}`;
+}
+
+function decimal(coefficient: bigint, scale = 0) {
+  return canonicalDecimal(coefficient, scale);
+}
+
+const MONEY_FACTORS: Record<string, ExactDecimal> = {
+  k: decimal(1_000n),
+  m: decimal(1_000_000n),
+  bn: decimal(1_000_000_000n),
+  万: decimal(10_000n),
+  亿: decimal(100_000_000n),
+};
+
+function signedDecimalFromToken(value: string) {
+  let cleaned = compactExact(value);
+  const accounting = cleaned.startsWith("(") && cleaned.endsWith(")");
+  if (accounting) cleaned = cleaned.slice(1, -1);
+  const match = cleaned.match(
+    /(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/u,
+  );
+  if (!match) return null;
+  const signs = [...cleaned.matchAll(/[+-]/gu)].map((item) => item[0]);
+  if (signs.length > 1 || (accounting && signs.length)) return null;
+  return parseDecimal(`${accounting || signs[0] === "-" ? "-" : ""}${match[0]}`);
+}
+
 function normalizeNumber(value: string) {
-  const cleaned = compact(value).replace(/^\+/, "");
-  const number = Number(cleaned);
-  return Number.isFinite(number) ? String(number) : cleaned;
+  const parsed = parseDecimal(compactExact(value));
+  return parsed ? decimalKey(parsed) : compact(value);
 }
 
 function normalizeMoney(value: string) {
-  const cleaned = compact(value);
+  const cleaned = compactExact(value);
   const currency =
     /(?:us\$|usd|美元)/.test(cleaned)
       ? "USD"
@@ -101,24 +196,26 @@ function normalizeMoney(value: string) {
                       ? "USD"
                       : "MONEY";
 
-  const numberMatch = cleaned.match(/\d+(?:\.\d+)?/);
-  if (!numberMatch) return `${currency}:${cleaned}`;
+  const amount = signedDecimalFromToken(cleaned);
+  if (!amount) return `${currency}:invalid:${cleaned}`;
 
-  let amount = Number(numberMatch[0]);
-  if (/亿/.test(cleaned)) amount *= 100_000_000;
-  else if (/万/.test(cleaned)) amount *= 10_000;
-  else if (/bn\b/.test(cleaned)) amount *= 1_000_000_000;
-  else if (/m\b/.test(cleaned)) amount *= 1_000_000;
-  else if (/k\b/.test(cleaned)) amount *= 1_000;
-
-  return `${currency}:${Number(amount.toFixed(8))}`;
+  const amountMatch = cleaned.match(
+    /(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/u,
+  );
+  const amountEnd = (amountMatch?.index ?? 0) + (amountMatch?.[0].length ?? 0);
+  const suffix = amountMatch
+    ? cleaned.slice(amountEnd).match(/^(bn|[km]|万|亿)/u)?.[1]
+    : undefined;
+  const factor = suffix ? MONEY_FACTORS[suffix] : undefined;
+  return `${currency}:${decimalKey(factor ? multiplyDecimal(amount, factor) : amount)}`;
 }
 
 function normalizePercentage(value: string) {
-  const cleaned = compact(value)
+  const cleaned = compactExact(value)
     .replace("百分之", "")
     .replace(/percent|％|%/g, "");
-  return normalizeNumber(cleaned);
+  const amount = signedDecimalFromToken(cleaned);
+  return amount ? decimalKey(amount) : cleaned;
 }
 
 const MONTHS: Record<string, string> = {
@@ -193,23 +290,45 @@ function normalizeTime(value: string) {
   const cleaned = toAscii(value).toLowerCase().replace(/\s+/g, "");
   const clock = cleaned.match(/(\d{1,2}):(\d{2})(am|pm)?/);
   if (clock) {
-    let hour = Number(clock[1]);
-    if (clock[3] === "pm" && hour < 12) hour += 12;
-    if (clock[3] === "am" && hour === 12) hour = 0;
-    return `${String(hour).padStart(2, "0")}:${clock[2]}`;
+    let hour = BigInt(clock[1]);
+    if (clock[3] === "pm" && hour < 12n) hour += 12n;
+    if (clock[3] === "am" && hour === 12n) hour = 0n;
+    return `${hour.toString().padStart(2, "0")}:${clock[2]}`;
   }
 
   const chinese = cleaned.match(/(上午|下午|晚上|凌晨)?(\d{1,2})点(?:(\d{1,2})分?)?/);
   if (chinese) {
-    let hour = Number(chinese[2]);
-    if ((chinese[1] === "下午" || chinese[1] === "晚上") && hour < 12) {
-      hour += 12;
+    let hour = BigInt(chinese[2]);
+    if ((chinese[1] === "下午" || chinese[1] === "晚上") && hour < 12n) {
+      hour += 12n;
     }
-    if (chinese[1] === "凌晨" && hour === 12) hour = 0;
-    return `${String(hour).padStart(2, "0")}:${String(chinese[3] ?? "0").padStart(2, "0")}`;
+    if (chinese[1] === "凌晨" && hour === 12n) hour = 0n;
+    return `${hour.toString().padStart(2, "0")}:${String(chinese[3] ?? "0").padStart(2, "0")}`;
   }
 
   return compact(value);
+}
+
+function validateTime(value: string) {
+  const cleaned = toAscii(value).toLowerCase().replace(/\s+/g, "");
+  const clock = cleaned.match(/^(\d{1,2}):(\d{2})(am|pm)?$/u);
+  if (clock) {
+    const hour = BigInt(clock[1]);
+    const minute = BigInt(clock[2]);
+    return clock[3]
+      ? hour >= 1n && hour <= 12n && minute <= 59n
+      : hour <= 23n && minute <= 59n;
+  }
+
+  const chinese = cleaned.match(
+    /^(上午|下午|晚上|凌晨)?(\d{1,2})点(?:(\d{1,2})分?)?$/u,
+  );
+  if (!chinese) return false;
+  const hour = BigInt(chinese[2]);
+  const minute = BigInt(chinese[3] ?? "0");
+  return chinese[1]
+    ? hour >= 1n && hour <= 12n && minute <= 59n
+    : hour <= 23n && minute <= 59n;
 }
 
 const UNIT_ALIASES: Record<string, string> = {
@@ -264,22 +383,31 @@ const UNIT_ALIASES: Record<string, string> = {
 };
 
 function normalizeMeasurement(value: string) {
-  const cleaned = compact(value);
-  const match = cleaned.match(/(-?\d+(?:\.\d+)?)([^\d.-]+)$/u);
+  let cleaned = compactExact(value);
+  const accounting = cleaned.startsWith("(") && cleaned.endsWith(")");
+  if (accounting) cleaned = cleaned.slice(1, -1);
+  const match = cleaned.match(
+    /^([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)([^\d.,+\-]+)$/u,
+  );
   if (!match) return cleaned;
+  const amount = parseDecimal(`${accounting ? "-" : ""}${match[1]}`);
+  if (!amount) return cleaned;
   const unit = UNIT_ALIASES[match[2]] ?? match[2];
-  return normalizeUnitValue(Number(match[1]), unit);
+  return normalizeUnitValue(amount, unit);
 }
 
 function normalizeRange(value: string) {
-  const cleaned = compact(value);
+  const cleaned = compactExact(value);
   const match = cleaned.match(
-    /(-?\d+(?:\.\d+)?)(?:-|–|—|~|至|到)(-?\d+(?:\.\d+)?)(.*)$/u,
+    /^([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?:-|–|—|~|至|到)([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(.*)$/u,
   );
   if (!match) return cleaned;
+  const leftAmount = parseDecimal(match[1]);
+  const rightAmount = parseDecimal(match[2]);
+  if (!leftAmount || !rightAmount) return cleaned;
   const unit = UNIT_ALIASES[match[3]] ?? match[3];
-  const left = normalizeUnitValue(Number(match[1]), unit);
-  const right = normalizeUnitValue(Number(match[2]), unit);
+  const left = normalizeUnitValue(leftAmount, unit);
+  const right = normalizeUnitValue(rightAmount, unit);
   const [leftFamily, leftValue] = splitUnitValue(left);
   const [rightFamily, rightValue] = splitUnitValue(right);
 
@@ -287,34 +415,30 @@ function normalizeRange(value: string) {
     return `${leftValue}..${rightValue}:${leftFamily}`;
   }
 
-  return `${normalizeNumber(match[1])}..${normalizeNumber(match[2])}:${unit}`;
+  return `${decimalKey(leftAmount)}..${decimalKey(rightAmount)}:${unit}`;
 }
 
 const UNIT_CONVERSIONS: Record<
   string,
-  { family: string; factor: number }
+  { family: string; factor: ExactDecimal }
 > = {
-  kg: { family: "mass-g", factor: 1_000 },
-  g: { family: "mass-g", factor: 1 },
-  mg: { family: "mass-g", factor: 0.001 },
-  km: { family: "length-m", factor: 1_000 },
-  m: { family: "length-m", factor: 1 },
-  cm: { family: "length-m", factor: 0.01 },
-  mm: { family: "length-m", factor: 0.001 },
-  day: { family: "duration-s", factor: 86_400 },
-  hour: { family: "duration-s", factor: 3_600 },
-  minute: { family: "duration-s", factor: 60 },
-  second: { family: "duration-s", factor: 1 },
+  kg: { family: "mass-g", factor: decimal(1_000n) },
+  g: { family: "mass-g", factor: decimal(1n) },
+  mg: { family: "mass-g", factor: decimal(1n, 3) },
+  km: { family: "length-m", factor: decimal(1_000n) },
+  m: { family: "length-m", factor: decimal(1n) },
+  cm: { family: "length-m", factor: decimal(1n, 2) },
+  mm: { family: "length-m", factor: decimal(1n, 3) },
+  day: { family: "duration-s", factor: decimal(86_400n) },
+  hour: { family: "duration-s", factor: decimal(3_600n) },
+  minute: { family: "duration-s", factor: decimal(60n) },
+  second: { family: "duration-s", factor: decimal(1n) },
 };
 
-function stableNumber(value: number) {
-  return String(Number(value.toFixed(12)));
-}
-
-function normalizeUnitValue(value: number, unit: string) {
+function normalizeUnitValue(value: ExactDecimal, unit: string) {
   const conversion = UNIT_CONVERSIONS[unit];
-  if (!conversion) return `${normalizeNumber(String(value))}:${unit}`;
-  return `${conversion.family}:${stableNumber(value * conversion.factor)}`;
+  if (!conversion) return `${decimalKey(value)}:${unit}`;
+  return `${conversion.family}:${decimalKey(multiplyDecimal(value, conversion.factor))}`;
 }
 
 function splitUnitValue(value: string) {
@@ -351,6 +475,62 @@ function normalizeUrl(value: string) {
   }
 }
 
+interface ScanView {
+  text: string;
+  starts: number[];
+  ends: number[];
+}
+
+function isAsciiDigit(value: string | undefined) {
+  return value !== undefined && /^\d$/u.test(toAscii(value));
+}
+
+function isFullWidthGroupingComma(text: string, index: number) {
+  if (text[index] !== "，" || !isAsciiDigit(text[index - 1])) return false;
+  if (
+    !isAsciiDigit(text[index + 1]) ||
+    !isAsciiDigit(text[index + 2]) ||
+    !isAsciiDigit(text[index + 3]) ||
+    isAsciiDigit(text[index + 4])
+  ) {
+    return false;
+  }
+
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const character = text[cursor];
+    if (isAsciiDigit(character) || character === "，") continue;
+    if (character === ",") return false;
+    break;
+  }
+  return true;
+}
+
+function makeScanView(text: string): ScanView {
+  let normalizedText = "";
+  const starts: number[] = [];
+  const ends: number[] = [];
+
+  for (let index = 0; index < text.length; ) {
+    const codePoint = text.codePointAt(index);
+    if (codePoint === undefined) break;
+    const character = String.fromCodePoint(codePoint);
+    const end = index + character.length;
+    let normalized = normalizeNumericChars(character);
+    if (character === "，" && !isFullWidthGroupingComma(text, index)) {
+      normalized = "，";
+    }
+
+    normalizedText += normalized;
+    for (let offset = 0; offset < normalized.length; offset += 1) {
+      starts.push(index);
+      ends.push(end);
+    }
+    index = end;
+  }
+
+  return { text: normalizedText, starts, ends };
+}
+
 const PATTERNS: PatternDefinition[] = [
   {
     kind: "url",
@@ -364,8 +544,7 @@ const PATTERNS: PatternDefinition[] = [
   },
   {
     kind: "version",
-    pattern:
-      /\bv\d+(?:\.\d+){1,3}(?:[-+][0-9A-Z.-]+)?\b|\b\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Z.-]+)?\b/giu,
+    pattern: /\bv\d+(?:\.\d+){1,3}(?:[-+][0-9A-Z.-]+)?\b/giu,
     normalize: (value) => compact(value).replace(/^v/, ""),
   },
   {
@@ -376,43 +555,51 @@ const PATTERNS: PatternDefinition[] = [
     validate: validateDate,
   },
   {
+    kind: "version",
+    pattern: /\b\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Z.-]+)?\b/giu,
+    normalize: (value) => compact(value),
+  },
+  {
     kind: "time",
     pattern:
-      /\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s?(?:am|pm))?\b|(?:上午|下午|晚上|凌晨)?\d{1,2}点(?:\d{1,2}分?)?/giu,
+      /\b\d{1,2}:\d{2}(?:\s?(?:am|pm))?\b|(?:上午|下午|晚上|凌晨)?\d{1,2}点(?:\d{1,2}分?)?/giu,
     normalize: normalizeTime,
+    validate: validateTime,
   },
   {
     kind: "money",
     pattern:
-      /(?:US\$|C\$|A\$|HK\$|USD|EUR|GBP|CNY|RMB|JPY|CAD|AUD|HKD|[$€£¥￥])\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!,\d)(?:\s*(?:k|m|bn|万|亿))?|(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!,\d)\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元)/giu,
+      /(?:\((?:(?:US\$|C\$|A\$|HK\$|(?:USD|CAD|AUD|HKD)\s*\$?|EUR|GBP|CNY|RMB|JPY|人民币|美元|欧元|英镑|日元|港元|加元|澳元|[$€£¥￥])\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?:\s*(?:k|m|bn|万|亿))?|(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元))\)|[+＋﹢\-−﹣－]?(?:US\$|C\$|A\$|HK\$|(?:USD|CAD|AUD|HKD)\s*\$?|EUR|GBP|CNY|RMB|JPY|人民币|美元|欧元|英镑|日元|港元|加元|澳元|[$€£¥￥])\s*[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?!,\d)(?:\s*(?:k|m|bn|万|亿))?|[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?!,\d)\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元))/giu,
     normalize: normalizeMoney,
   },
   {
     kind: "percentage",
-    pattern: /百分之\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:%|％|percent\b)/giu,
+    pattern:
+      /(?:\((?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:%|％|percent\b)\)|百分之\s*[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?|[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:%|％|percent\b))/giu,
     normalize: normalizePercentage,
   },
   {
     kind: "range",
     pattern:
-      /(?<![\d.])-?\d+(?:\.\d+)?\s*(?:-|–|—|~|至|到)\s*-?\d+(?:\.\d+)?\s*(?:kg|g|mg|km|cm|mm|mb|gb|tb|kb|ms|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)?(?!\d)(?!\.\d)/giu,
+      /(?<![\d.,])[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:-|–|—|~|至|到)\s*[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:kg|g|mg|km|cm|mm|mb|gb|tb|kb|ms|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)?(?!\d)(?![.．]\d)/giu,
     normalize: normalizeRange,
   },
   {
     kind: "measurement",
     pattern:
-      /(?<![\d.,])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!,\d)\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|g|m|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)(?![A-Z\d])/giu,
+      /(?<![\d.,])(?:\([+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|g|m|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)\)|[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?!,\d)\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|g|m|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩))(?![A-Z\d])/giu,
     normalize: normalizeMeasurement,
   },
   {
     kind: "quote",
-    pattern: /“[^”\n]{1,120}”|‘[^’\n]{1,120}’|"[^"\n]{1,120}"|'[^'\n]{1,120}'/gu,
+    pattern:
+      /“[^”\n]{1,120}”|‘[^’\n]{1,120}’|"[^"\n]{1,120}"|(?<![\p{L}\p{N}])'[^'\n]{1,120}'(?![\p{L}\p{N}])/gu,
     normalize: normalizeQuote,
   },
   {
     kind: "number",
     pattern:
-      /(?<![\d.,])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!\d)(?!\.\d)(?!,\d)/gu,
+      /(?<![\d.,])[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!\d)(?!\.\d)(?!,\d)/gu,
     normalize: normalizeNumber,
   },
 ];
@@ -433,13 +620,16 @@ function makeContext(text: string, start: number, end: number) {
 
 export function extractFacts(text: string): Fact[] {
   const facts: Fact[] = [];
+  const scan = makeScanView(text);
 
   for (const definition of PATTERNS) {
     definition.pattern.lastIndex = 0;
-    for (const match of text.matchAll(definition.pattern)) {
-      const raw = match[0];
-      const start = match.index ?? 0;
-      const end = start + raw.length;
+    for (const match of scan.text.matchAll(definition.pattern)) {
+      const scanStart = match.index ?? 0;
+      const scanEnd = scanStart + match[0].length;
+      const start = scan.starts[scanStart] ?? 0;
+      const end = scan.ends[scanEnd - 1] ?? start;
+      const raw = text.slice(start, end);
       if (overlaps(start, end, facts)) continue;
 
       facts.push({
@@ -479,39 +669,116 @@ function bigrams(value: string) {
   return result;
 }
 
-function fingerprintSimilarity(left: string, right: string) {
-  const leftPairs = bigrams(left);
-  const rightPairs = bigrams(right);
-  if (!leftPairs.size || !rightPairs.size) return 0;
-  let overlapCount = 0;
-  for (const pair of leftPairs) {
-    if (rightPairs.has(pair)) overlapCount += 1;
+function nearbyTokenWeights(text: string, fact: Fact) {
+  const radius = 48;
+  const windowStart = Math.max(0, fact.start - radius);
+  const windowEnd = Math.min(text.length, fact.end + radius);
+  const window = toAscii(text.slice(windowStart, windowEnd)).toLowerCase();
+  const factStart = fact.start - windowStart;
+  const factEnd = fact.end - windowStart;
+  const stopwords = new Set([
+    "a",
+    "an",
+    "and",
+    "are",
+    "at",
+    "by",
+    "for",
+    "from",
+    "group",
+    "groups",
+    "has",
+    "have",
+    "in",
+    "is",
+    "of",
+    "on",
+    "or",
+    "people",
+    "person",
+    "team",
+    "teams",
+    "the",
+    "to",
+    "user",
+    "users",
+    "was",
+    "were",
+    "与",
+    "为",
+    "人",
+    "及",
+    "名",
+    "和",
+    "是",
+    "有",
+    "的",
+    "组",
+  ]);
+  const tokens: Array<{
+    key: string;
+    distance: number;
+  }> = [];
+
+  for (const match of window.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (start < factEnd && end > factStart) continue;
+    if (/^\d+$/u.test(match[0])) continue;
+    if (stopwords.has(match[0])) continue;
+
+    const side = end <= factStart ? "left" : start >= factEnd ? "right" : "";
+    if (!side) continue;
+    const distance =
+      side === "left" ? factStart - end : start - factEnd;
+    tokens.push({ key: `${side}:${match[0]}`, distance });
   }
-  return (2 * overlapCount) / (leftPairs.size + rightPairs.size);
+
+  const weights = new Map<string, number>();
+  for (const side of ["left", "right"]) {
+    for (const token of tokens
+      .filter(({ key }) => key.startsWith(`${side}:`))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, 3)) {
+      const weight = 1 / (1 + token.distance / 8);
+      weights.set(token.key, Math.max(weights.get(token.key) ?? 0, weight));
+    }
+  }
+  return weights;
 }
 
-function nearbyContext(text: string, fact: Fact) {
-  const leftWindow = text.slice(Math.max(0, fact.start - 64), fact.start);
-  const rightWindow = text.slice(fact.end, Math.min(text.length, fact.end + 64));
-  let leftBoundary = -1;
-  for (let index = leftWindow.length - 1; index >= 0; index -= 1) {
-    if (/[。！？.!?；;，,\/|\n]/u.test(leftWindow[index])) {
-      leftBoundary = index;
-      break;
-    }
+function localSegmentFingerprint(text: string, fact: Fact) {
+  const boundary = /[。！？.!?；;，,\/|、•·—–\t\n]|\band\b|和/giu;
+  const before = text.slice(0, fact.start);
+  const after = text.slice(fact.end);
+  let start = 0;
+  for (const match of before.matchAll(boundary)) {
+    start = (match.index ?? 0) + match[0].length;
   }
-  let rightBoundary = rightWindow.length;
-  for (let index = 0; index < rightWindow.length; index += 1) {
-    if (/[。！？.!?；;，,\/|\n]/u.test(rightWindow[index])) {
-      rightBoundary = index;
-      break;
-    }
-  }
+  boundary.lastIndex = 0;
+  const nextBoundary = boundary.exec(after);
+  const end = nextBoundary
+    ? fact.end + (nextBoundary.index ?? 0)
+    : text.length;
+  return textFingerprint(
+    `${text.slice(start, fact.start)} ${text.slice(fact.end, end)}`,
+  );
+}
 
-  return {
-    before: textFingerprint(leftWindow.slice(leftBoundary + 1)),
-    after: textFingerprint(rightWindow.slice(0, rightBoundary)),
-  };
+function weightedDice(
+  left: Map<string, number>,
+  right: Map<string, number>,
+) {
+  let leftWeight = 0;
+  let rightWeight = 0;
+  let overlapWeight = 0;
+  for (const value of left.values()) leftWeight += value;
+  for (const value of right.values()) rightWeight += value;
+  if (!leftWeight || !rightWeight) return 0;
+  for (const [token, value] of left) {
+    overlapWeight += Math.min(value, right.get(token) ?? 0);
+  }
+  return (2 * overlapWeight) / (leftWeight + rightWeight);
 }
 
 function contextSimilarity(
@@ -533,14 +800,20 @@ function contextSimilarity(
 
   if (leftText === undefined || rightText === undefined) return broadScore;
 
-  const leftNearby = nearbyContext(leftText, left);
-  const rightNearby = nearbyContext(rightText, right);
-  const nearbyScore = fingerprintSimilarity(
-    `${leftNearby.before}${leftNearby.after}`,
-    `${rightNearby.before}${rightNearby.after}`,
+  const nearbyScore = weightedDice(
+    nearbyTokenWeights(leftText, left),
+    nearbyTokenWeights(rightText, right),
   );
+  const localScore = (() => {
+    const leftPairs = bigrams(localSegmentFingerprint(leftText, left));
+    const rightPairs = bigrams(localSegmentFingerprint(rightText, right));
+    if (!leftPairs.size || !rightPairs.size) return 0;
+    let overlap = 0;
+    for (const pair of leftPairs) if (rightPairs.has(pair)) overlap += 1;
+    return (2 * overlap) / (leftPairs.size + rightPairs.size);
+  })();
 
-  return nearbyScore * 0.85 + broadScore * 0.15;
+  return Math.max(localScore, nearbyScore * 0.9, broadScore * 0.75);
 }
 
 function relativePosition(fact: Fact, textLength: number) {
@@ -705,22 +978,52 @@ function normalizeRequired(value: string) {
 }
 
 function findRequired(revision: string, required: string) {
+  const requiredStart = required.match(/^./u)?.[0] ?? "";
+  const requiredEnd = required.match(/.$/u)?.[0] ?? "";
+  const requiresBoundary = (character: string) =>
+    /[\p{L}\p{N}\p{M}]/u.test(character) &&
+    !/\p{Script=Han}/u.test(character);
+  const isWordCharacter = (character: string) =>
+    /[\p{L}\p{N}\p{M}]/u.test(character);
+  const requiresLeftBoundary = requiresBoundary(requiredStart);
+  const requiresRightBoundary = requiresBoundary(requiredEnd);
+
   let start = revision.indexOf(required);
   while (start !== -1) {
-    const before = revision[start - 1] ?? "";
-    const after = revision[start + required.length] ?? "";
-    const requiresLeftBoundary = /^[a-z0-9]/i.test(required);
-    const requiresRightBoundary = /[a-z0-9]$/i.test(required);
+    const before = revision.slice(0, start).match(/.$/u)?.[0] ?? "";
+    const after = revision.slice(start + required.length).match(/^./u)?.[0] ?? "";
     const leftMatches =
-      !requiresLeftBoundary || !/[a-z0-9]/i.test(before);
+      !requiresLeftBoundary || !isWordCharacter(before);
     const rightMatches =
-      !requiresRightBoundary || !/[a-z0-9]/i.test(after);
+      !requiresRightBoundary || !isWordCharacter(after);
 
     if (leftMatches && rightMatches) return start;
     start = revision.indexOf(required, start + 1);
   }
 
   return -1;
+}
+
+function requiredLines(required: string) {
+  const seen = new Set<string>();
+  return required
+    .split(/\r?\n/u)
+    .map((raw) => ({ raw: raw.trim(), normalized: normalizeRequired(raw) }))
+    .filter(({ raw }) => Boolean(raw))
+    .filter(({ normalized }) => {
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+}
+
+export function countRequiredNotInSource(source: string, required: string) {
+  const normalizedSource = normalizeRequired(
+    source.replace(/\s+/g, " ").trim(),
+  );
+  return requiredLines(required).filter(
+    ({ normalized }) => findRequired(normalizedSource, normalized) === -1,
+  ).length;
 }
 
 function compareRequiredFacts(
@@ -732,20 +1035,7 @@ function compareRequiredFacts(
   const revisionContextText = revision.replace(/\s+/g, " ").trim();
   const normalizedSource = normalizeRequired(sourceContextText);
   const normalizedRevision = normalizeRequired(revisionContextText);
-  const seen = new Set<string>();
-
-  return required
-    .split(/\r?\n/u)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .filter((raw) => {
-      const normalized = normalizeRequired(raw);
-      if (seen.has(normalized)) return false;
-      seen.add(normalized);
-      return true;
-    })
-    .map((raw, index) => {
-      const normalized = normalizeRequired(raw);
+  return requiredLines(required).map(({ raw, normalized }, index) => {
       const sourceStart = findRequired(normalizedSource, normalized);
       const revisionStart = findRequired(normalizedRevision, normalized);
       const presentInSource = sourceStart !== -1;

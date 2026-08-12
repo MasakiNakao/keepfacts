@@ -1,6 +1,12 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+
+const packageMetadata = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+) as { version: string };
+const expectedVersion = `v${packageMetadata.version}`;
 
 async function setComparison(
   page: Page,
@@ -114,7 +120,7 @@ test("copies and downloads a traceable bilingual report", async ({ page, context
   await page.getByRole("button", { name: "复制报告" }).click();
   await expect(page.getByText("报告已复制")).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("- **KeepFacts 版本:** v0.1.5");
+  expect(copied).toContain(`- **KeepFacts 版本:** ${expectedVersion}`);
   expect(copied).toMatch(/构建提交:\*\* `(?:local|[0-9a-f]{40})`/);
   expect(copied).toContain("原文语境");
   expect(copied).toContain("改写语境");
@@ -126,7 +132,7 @@ test("copies and downloads a traceable bilingual report", async ({ page, context
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   const downloaded = await readFile(downloadPath!, "utf8");
-  expect(downloaded).toContain("- **KeepFacts 版本:** v0.1.5");
+  expect(downloaded).toContain(`- **KeepFacts 版本:** ${expectedVersion}`);
   expect(downloaded).toContain("原文语境");
   expect(downloaded).toContain("改写语境");
 

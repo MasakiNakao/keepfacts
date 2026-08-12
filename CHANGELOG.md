@@ -2,6 +2,15 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.1.6] - 2026-08-12
+
+### Fixed
+
+- Add a tag-bound manual recovery path for GitHub Pages when GitHub suppresses
+  workflow events after multiple historical tags are pushed together.
+- Resolve the deployed commit from the checked-out release tag so the interface
+  and Markdown reports retain the correct build SHA during recovery runs.
+
 ## [0.1.5] - 2026-08-12
 
 ### Added

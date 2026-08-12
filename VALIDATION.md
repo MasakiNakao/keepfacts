@@ -18,14 +18,15 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.1.4 snapshot
+## v0.1.5 snapshot
 
 - 37 public validation cases
-- 36 automated tests
+- 38 automated unit tests plus Chromium browser and accessibility checks
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
-- CI runs the same tests on every push and pull request
+- CI runs the same unit, desktop, 390 px mobile, and accessibility checks on
+  every push and pull request
 
 The corpus covers dates, times, money, percentages, measurements, numeric
 ranges, versions, URLs, emails, quoted text, standalone numbers, duplicate

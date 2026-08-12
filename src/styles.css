@@ -3,7 +3,7 @@
   --paper-deep: #ebe6db;
   --panel: #fffdf8;
   --ink: #17251f;
-  --muted: #69736e;
+  --muted: #5f6a65;
   --line: #d8d4ca;
   --green: #0f5d46;
   --green-dark: #0a4534;
@@ -46,12 +46,22 @@ button:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
 a:focus-visible {
-  outline: 3px solid rgba(15, 93, 70, 0.25);
+  outline: 3px solid var(--green);
   outline-offset: 3px;
 }
 
 main {
   min-height: 100vh;
+}
+
+.sr-only {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .site-header {
@@ -228,7 +238,7 @@ main {
 }
 
 .char-count {
-  color: #8a918d;
+  color: var(--muted);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 10px;
   margin-left: 12px;
@@ -250,7 +260,7 @@ main {
 }
 
 .editor-card textarea::placeholder {
-  color: #a0a6a2;
+  color: #65716b;
 }
 
 .editor-card:focus-within {
@@ -301,7 +311,7 @@ main {
   background: rgba(255, 253, 248, 0.7);
   border: 1px solid var(--line);
   border-radius: 15px;
-  margin: 2px 4px 0;
+  margin: 20px 4px 0;
   overflow: hidden;
 }
 
@@ -397,6 +407,10 @@ main {
   opacity: 0.42;
 }
 
+.compare-button[aria-busy="true"] {
+  cursor: progress;
+}
+
 .button-step {
   border-right: 1px solid rgba(255, 255, 255, 0.25);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -425,6 +439,16 @@ main {
   font-size: clamp(30px, 4vw, 46px);
   letter-spacing: -0.045em;
   margin: 0 0 9px;
+}
+
+.results-heading-row h2:focus {
+  outline: none;
+}
+
+.results-heading-row h2:focus-visible {
+  border-radius: 6px;
+  outline: 3px solid var(--green);
+  outline-offset: 5px;
 }
 
 .results-heading-row p:not(.eyebrow) {
@@ -487,6 +511,10 @@ main {
   line-height: 1.6;
   margin-bottom: 16px;
   padding: 11px 14px;
+}
+
+.comparison-error {
+  margin: 16px 4px 0;
 }
 
 .score-ring {
@@ -631,6 +659,26 @@ main {
   overflow-x: auto;
 }
 
+.automatic-results {
+  margin-top: 34px;
+}
+
+.automatic-results-heading h3 {
+  font-size: 22px;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.automatic-results-heading p {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 7px 0 0;
+}
+
+.automatic-results .filter-tabs {
+  margin-top: 14px;
+}
+
 .filter-tabs button {
   align-items: center;
   background: transparent;
@@ -766,6 +814,11 @@ main {
   color: #7c3622;
 }
 
+.fact-value-preserved-match {
+  background: var(--green-pale);
+  color: var(--green-dark);
+}
+
 .comparison-arrow {
   color: var(--muted);
 }
@@ -875,9 +928,13 @@ footer {
   padding: 25px 0 38px;
 }
 
-footer span {
+footer > span {
   font-size: 13px;
   font-weight: 720;
+}
+
+.commit-sha {
+  font: inherit;
 }
 
 footer p {

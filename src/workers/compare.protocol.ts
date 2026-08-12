@@ -1,0 +1,25 @@
+import type { FactComparison } from "../lib/facts";
+
+export interface CompareInput {
+  source: string;
+  revision: string;
+  required: string;
+}
+
+export interface CompareWorkerRequest {
+  type: "compare";
+  requestId: number;
+  input: CompareInput;
+}
+
+export type CompareWorkerResponse =
+  | {
+      type: "result";
+      requestId: number;
+      comparison: FactComparison;
+    }
+  | {
+      type: "error";
+      requestId: number;
+      message: string;
+    };

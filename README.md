@@ -45,7 +45,8 @@ It is intentionally narrow:
 - Precision-safe signed numbers plus common Chinese, English, and full-width
   formatting equivalence
 - User-defined names, terms, and phrases that must be preserved, reported separately from automatic fact retention
-- Copyable and downloadable Markdown review reports
+- Traceable Markdown reports with source/rewrite context, app version, and build commit
+- Responsive, keyboard-accessible review controls with automated browser checks
 
 ## Run locally
 
@@ -68,6 +69,13 @@ Create a production build:
 npm run build
 ```
 
+Run Chromium browser and accessibility checks after installing the Playwright browser:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
 ## Validation
 
 The repository includes a public, data-driven validation corpus covering
@@ -79,7 +87,7 @@ steps, matching guarantees, and known limitations.
 
 KeepFacts extracts facts in priority order so nested numbers are not counted twice. It then normalizes safe formatting differences—for example, `¥30,000` and `3万元`—using exact decimal strings rather than floating-point arithmetic. Context-aware, one-to-one matching keeps repeated or reordered values attached to the most likely subject. Unmatched facts are shown as missing, possibly changed, or newly introduced.
 
-No model is used in this process. The result is fast and reproducible, but deliberately limited to facts the rules can identify.
+No model is used in this process. Requested comparisons run in a local Web Worker so large checks do not block text editing. Results remain reproducible, but deliberately limited to facts the rules can identify.
 
 ## Roadmap
 

@@ -7,7 +7,12 @@ import {
   type FactKind,
 } from "./lib/facts";
 import { buildMarkdownReport, formatLocalDate } from "./lib/report";
-import { APP_VERSION } from "./version";
+import { APP_COMMIT_SHA, APP_VERSION } from "./version";
+import type {
+  CompareInput,
+  CompareWorkerRequest,
+  CompareWorkerResponse,
+} from "./workers/compare.protocol";
 
 type Locale = "zh" | "en";
 type Filter = "all" | "review" | "preserved" | "added";
@@ -50,10 +55,14 @@ const copy = {
     loadExample: "载入示例",
     clear: "清空",
     compare: "开始核对",
+    comparing: "正在核对…",
+    compareFailed: "核对未完成，请重试。上次结果已保留。",
     compareHint: "点击后生成一份固定结果；修改内容后请重新核对",
     resultsOutdated: "输入内容已更改，以下仍是上次核对结果。请重新核对后再导出报告。",
     resultTitle: "核对结果",
     resultIntro: "先看需要人工确认的项目，再决定是否接受这次改写。",
+    resultReady: (automatic: number, review: number, added: number, required: number) =>
+      `核对完成：自动事实 ${automatic} 项，需确认 ${review} 项，新增 ${added} 项，必须保留异常 ${required} 项。`,
     copyReport: "复制报告",
     downloadReport: "下载 Markdown",
     copied: "报告已复制",
@@ -73,21 +82,28 @@ const copy = {
     requiredInputWarning: (count: number) =>
       `${count} 条内容未在原文中找到，不纳入必保保留率。`,
     all: "全部",
+    automaticDetails: "自动事实明细",
+    automaticDetailsHint: "以下筛选只作用于自动提取的事实。",
+    visibleItems: (label: string, count: number) =>
+      `${label}筛选：当前显示 ${count} 项自动事实。`,
     emptyTitle: "还没有可核对的事实",
     emptyBody: "请在左右两侧粘贴文本，或载入示例查看效果。",
     preservedNote: "改写稿中找到等价事实",
     possibleChange: "可能改成了",
     missingNote: "改写稿中未找到对应事实",
-    invalidNote: "日期格式可识别，但数值超出有效范围",
+    invalidNote: "可识别为日期或时间，但数值无效",
     notInSourceNote: "原文中未找到，无法作为必须保留项核对",
     notInSourceAddedNote: "原文中未找到；仅在改写稿出现，不算作已保留",
     addedNote: "只在改写稿中出现",
     sourceContext: "原文语境",
     revisionContext: "改写语境",
+    comparisonContext: "查看原文与改写语境",
     disclaimer:
       "KeepFacts 当前只检查可精确比对的硬事实，不判断整段文字的语义是否正确。黄色项目需要你人工确认。",
     footerPrefix: "实验版",
     footer: "确定性规则 · 无追踪代码",
+    homeLabel: "KeepFacts 首页",
+    documentTitle: "KeepFacts — 措辞可以改变，事实不该走样",
     changeLanguage: "English",
   },
   en: {
@@ -110,11 +126,16 @@ const copy = {
     loadExample: "Load example",
     clear: "Clear",
     compare: "Check the facts",
+    comparing: "Checking…",
+    compareFailed:
+      "The check did not finish. Try again; the previous result is unchanged.",
     compareHint: "Creates a fixed result. Recheck after editing either text.",
     resultsOutdated:
       "The inputs changed. These are still the previous results; recheck before exporting.",
     resultTitle: "Fact check",
     resultIntro: "Review flagged items before accepting the rewrite.",
+    resultReady: (automatic: number, review: number, added: number, required: number) =>
+      `Check complete: ${automatic} automatic facts, ${review} for review, ${added} new, and ${required} must-preserve issues.`,
     copyReport: "Copy report",
     downloadReport: "Download Markdown",
     copied: "Report copied",
@@ -134,22 +155,29 @@ const copy = {
     requiredInputWarning: (count: number) =>
       `${count} item${count === 1 ? "" : "s"} not found in the source and excluded from required retention.`,
     all: "All",
+    automaticDetails: "Automatic fact details",
+    automaticDetailsHint: "These filters apply only to automatically extracted facts.",
+    visibleItems: (label: string, count: number) =>
+      `${label} filter: showing ${count} automatic fact${count === 1 ? "" : "s"}.`,
     emptyTitle: "No comparable facts yet",
     emptyBody: "Paste text into both fields, or load the example to see it work.",
     preservedNote: "Equivalent fact found in the rewrite",
     possibleChange: "Possibly changed to",
     missingNote: "No corresponding fact found in the rewrite",
-    invalidNote: "Date-like value found, but it is outside the valid calendar range",
+    invalidNote: "Recognizable date or time found, but its value is invalid",
     notInSourceNote: "Not found in the source, so it cannot be checked",
     notInSourceAddedNote:
       "Not found in the source; appearing only in the rewrite is not preservation",
     addedNote: "Appears only in the rewrite",
     sourceContext: "Source context",
     revisionContext: "Rewrite context",
+    comparisonContext: "View source and rewrite context",
     disclaimer:
       "KeepFacts currently checks exact, extractable facts only. It does not judge whether the full meaning is correct. Yellow items need human review.",
     footerPrefix: "Experimental",
     footer: "Deterministic rules · No tracking",
+    homeLabel: "KeepFacts home",
+    documentTitle: "KeepFacts — Change the wording, not the facts",
     changeLanguage: "中文",
   },
 };
@@ -198,10 +226,14 @@ function ResultCard({
   const compared = fact as ComparedFact;
   const status = added ? "added" : compared.status;
   const notInSource = compared.reviewReason === "not-in-source";
-  const contextLabel =
-    added || (notInSource && compared.matched)
-      ? t.revisionContext
-      : t.sourceContext;
+  const sourceFact = added
+    ? undefined
+    : compared.sourceMatch ?? (notInSource ? undefined : fact);
+  const rewriteFact = added
+    ? fact
+    : compared.matched ?? compared.possibleMatch;
+  const showRewriteValue =
+    rewriteFact !== undefined && rewriteFact.raw !== sourceFact?.raw;
   const statusText =
     status === "preserved"
       ? t.preservedNote
@@ -216,7 +248,6 @@ function ResultCard({
             : compared.possibleMatch
               ? t.possibleChange
               : t.missingNote;
-  const context = notInSource ? compared.matched?.context : fact.context;
 
   return (
     <article className={`result-card result-${status}`}>
@@ -227,30 +258,35 @@ function ResultCard({
         <div className="result-heading">
           <span className="kind-label">{kindLabels[locale][fact.kind]}</span>
           <div className="fact-comparison">
-            <code className="fact-value">{fact.raw}</code>
-            {status === "review" &&
-            compared.possibleMatch &&
-            compared.reviewReason !== "invalid" ? (
+            <code className="fact-value">{sourceFact?.raw ?? fact.raw}</code>
+            {showRewriteValue ? (
               <>
                 <span className="comparison-arrow" aria-hidden="true">
                   →
                 </span>
-                <code className="fact-value fact-value-candidate">
-                  {compared.possibleMatch.raw}
+                <code
+                  className={`fact-value ${status === "preserved" ? "fact-value-preserved-match" : "fact-value-candidate"}`}
+                >
+                  {rewriteFact.raw}
                 </code>
               </>
             ) : null}
           </div>
         </div>
         <p className="status-note">{statusText}</p>
-        {context ? (
+        {sourceFact?.context || rewriteFact?.context ? (
           <details className="context-details">
-            <summary>{contextLabel}</summary>
-            <p>{context}</p>
-            {status === "review" && compared.possibleMatch ? (
+            <summary>{t.comparisonContext}</summary>
+            {sourceFact?.context ? (
+              <>
+                <strong>{t.sourceContext}</strong>
+                <p>{sourceFact.context}</p>
+              </>
+            ) : null}
+            {rewriteFact?.context ? (
               <>
                 <strong>{t.revisionContext}</strong>
-                <p>{compared.possibleMatch.context}</p>
+                <p>{rewriteFact.context}</p>
               </>
             ) : null}
           </details>
@@ -276,18 +312,31 @@ export default function Home() {
   const [hasRun, setHasRun] = useState(true);
   const [filter, setFilter] = useState<Filter>("review");
   const [reportFeedback, setReportFeedback] = useState("");
+  const [comparisonFeedback, setComparisonFeedback] = useState("");
+  const [comparisonError, setComparisonError] = useState("");
+  const [busy, setBusy] = useState(false);
   const reportFeedbackTimer = useRef<number | undefined>(undefined);
+  const resultsHeading = useRef<HTMLHeadingElement | null>(null);
+  const localeRef = useRef(locale);
+  const workerRef = useRef<Worker | null>(null);
+  const requestSequence = useRef(0);
+  const pendingRef = useRef<
+    { requestId: number; input: CompareInput; worker: Worker } | undefined
+  >(undefined);
   const t = copy[locale];
+  localeRef.current = locale;
 
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
-  }, [locale]);
+    document.title = t.documentTitle;
+  }, [locale, t.documentTitle]);
 
   useEffect(
     () => () => {
       if (reportFeedbackTimer.current !== undefined) {
         window.clearTimeout(reportFeedbackTimer.current);
       }
+      workerRef.current?.terminate();
     },
     [],
   );
@@ -313,7 +362,26 @@ export default function Home() {
       revision !== checkedInput.revision ||
       required !== checkedInput.required);
 
+  const cancelPendingComparison = () => {
+    requestSequence.current += 1;
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    pendingRef.current = undefined;
+    setBusy(false);
+    setComparisonFeedback("");
+  };
+
+  const updateInput = (
+    setter: (value: string) => void,
+    value: string,
+  ) => {
+    if (workerRef.current) cancelPendingComparison();
+    setComparisonError("");
+    setter(value);
+  };
+
   const loadExample = () => {
+    cancelPendingComparison();
     const example = examples[locale];
     setSource(example.source);
     setRevision(example.revision);
@@ -324,9 +392,12 @@ export default function Home() {
     );
     setHasRun(true);
     setFilter("review");
+    setComparisonError("");
+    setComparisonFeedback("");
   };
 
   const clearAll = () => {
+    cancelPendingComparison();
     setSource("");
     setRevision("");
     setRequired("");
@@ -334,19 +405,87 @@ export default function Home() {
     setComparison(compareFacts("", "", ""));
     setHasRun(false);
     setFilter("all");
+    setComparisonError("");
+    setComparisonFeedback("");
   };
 
   const runComparison = () => {
-    const nextComparison = compareFacts(source, revision, required);
-    setCheckedInput({ source, revision, required });
-    setComparison(nextComparison);
-    setHasRun(true);
-    setFilter(nextComparison.reviewCount ? "review" : "all");
-    window.requestAnimationFrame(() => {
-      document
-        .getElementById("results")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    if (busy || pendingRef.current) return;
+    const input = { source, revision, required };
+    const requestId = ++requestSequence.current;
+    let worker: Worker;
+
+    try {
+      worker = new Worker(
+        new URL("./workers/compare.worker.ts", import.meta.url),
+        { type: "module", name: "keepfacts-compare" },
+      );
+    } catch {
+      setComparisonError(copy[localeRef.current].compareFailed);
+      setComparisonFeedback("");
+      return;
+    }
+
+    const isCurrent = () =>
+      workerRef.current === worker &&
+      pendingRef.current?.worker === worker &&
+      pendingRef.current.requestId === requestId;
+    const finishError = () => {
+      if (!isCurrent()) return;
+      worker.terminate();
+      workerRef.current = null;
+      pendingRef.current = undefined;
+      setBusy(false);
+      setComparisonError(copy[localeRef.current].compareFailed);
+      setComparisonFeedback("");
+    };
+
+    worker.onmessage = ({ data }: MessageEvent<CompareWorkerResponse>) => {
+      if (!isCurrent() || data.requestId !== requestId) return;
+      if (data.type === "error") {
+        finishError();
+        return;
+      }
+
+      worker.terminate();
+      workerRef.current = null;
+      pendingRef.current = undefined;
+      setBusy(false);
+      setComparison(data.comparison);
+      setCheckedInput(input);
+      setHasRun(true);
+      setFilter(data.comparison.reviewCount ? "review" : "all");
+      setComparisonError("");
+      const currentCopy = copy[localeRef.current];
+      setComparisonFeedback(
+        currentCopy.resultReady(
+          data.comparison.sourceFacts.length,
+          data.comparison.reviewCount,
+          data.comparison.addedCount,
+          data.comparison.requiredMissingCount +
+            data.comparison.requiredNotInSourceCount,
+        ),
+      );
+      window.requestAnimationFrame(() => {
+        resultsHeading.current?.focus({ preventScroll: true });
+        document
+          .getElementById("results")
+          ?.scrollIntoView({ behavior: "auto", block: "start" });
+      });
+    };
+    worker.onerror = finishError;
+    worker.onmessageerror = finishError;
+    workerRef.current = worker;
+    pendingRef.current = { requestId, input, worker };
+    setBusy(true);
+    setComparisonError("");
+    setComparisonFeedback(t.comparing);
+    const request: CompareWorkerRequest = { type: "compare", requestId, input };
+    try {
+      worker.postMessage(request);
+    } catch {
+      finishError();
+    }
   };
 
   const showReportFeedback = (message: string) => {
@@ -360,7 +499,11 @@ export default function Home() {
     }, 2400);
   };
 
-  const reportMarkdown = () => buildMarkdownReport(comparison, locale);
+  const reportMarkdown = () =>
+    buildMarkdownReport(comparison, locale, {
+      appVersion: APP_VERSION,
+      commitSha: APP_COMMIT_SHA,
+    });
 
   const copyReport = async () => {
     try {
@@ -421,7 +564,7 @@ export default function Home() {
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="KeepFacts home">
+        <a className="brand" href="#top" aria-label={t.homeLabel}>
           <span className="brand-mark" aria-hidden="true">
             K
           </span>
@@ -469,7 +612,7 @@ export default function Home() {
             <textarea
               aria-label={t.source}
               value={source}
-              onChange={(event) => setSource(event.target.value)}
+              onChange={(event) => updateInput(setSource, event.target.value)}
               placeholder={t.placeholderSource}
               spellCheck="false"
             />
@@ -489,12 +632,31 @@ export default function Home() {
             <textarea
               aria-label={t.revision}
               value={revision}
-              onChange={(event) => setRevision(event.target.value)}
+              onChange={(event) => updateInput(setRevision, event.target.value)}
               placeholder={t.placeholderRevision}
               spellCheck="false"
             />
           </article>
         </div>
+
+        <details className="required-panel">
+          <summary>
+            <span>{t.required}</span>
+            <small>{t.requiredHint}</small>
+          </summary>
+          <textarea
+            aria-label={t.required}
+            value={required}
+            onChange={(event) => updateInput(setRequired, event.target.value)}
+            placeholder={t.requiredPlaceholder}
+            spellCheck="false"
+          />
+          <p className="required-input-feedback" role="status" aria-live="polite">
+            {requiredNotInSourceCount
+              ? t.requiredInputWarning(requiredNotInSourceCount)
+              : ""}
+          </p>
+        </details>
 
         <div className="action-bar">
           <div className="secondary-actions">
@@ -511,42 +673,33 @@ export default function Home() {
               className="compare-button"
               type="button"
               onClick={runComparison}
-              disabled={!source.trim() || !revision.trim()}
+              disabled={busy || !source.trim() || !revision.trim()}
+              aria-busy={busy}
             >
               <span className="button-step">03</span>
-              {t.compare}
+              {busy ? t.comparing : t.compare}
               <span aria-hidden="true">→</span>
             </button>
             <span>{t.compareHint}</span>
           </div>
         </div>
-
-        <details className="required-panel">
-          <summary>
-            <span>{t.required}</span>
-            <small>{t.requiredHint}</small>
-          </summary>
-          <textarea
-            aria-label={t.required}
-            value={required}
-            onChange={(event) => setRequired(event.target.value)}
-            placeholder={t.requiredPlaceholder}
-            spellCheck="false"
-          />
-          <p className="required-input-feedback" role="status" aria-live="polite">
-            {requiredNotInSourceCount
-              ? t.requiredInputWarning(requiredNotInSourceCount)
-              : ""}
-          </p>
-        </details>
+        {comparisonError ? (
+          <div className="stale-notice comparison-error" role="alert">
+            {comparisonError}
+          </div>
+        ) : null}
       </section>
+
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {comparisonFeedback}
+      </span>
 
       {hasRun ? (
         <section className="results-section" id="results">
           <div className="results-heading-row">
             <div>
               <p className="eyebrow">03 · {t.resultTitle}</p>
-              <h2>{t.resultTitle}</h2>
+              <h2 ref={resultsHeading} tabIndex={-1}>{t.resultTitle}</h2>
               <p>{t.resultIntro}</p>
             </div>
             <div className="result-tools">
@@ -554,14 +707,14 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={copyReport}
-                  disabled={resultsOutdated}
+                  disabled={busy || resultsOutdated}
                 >
                   {t.copyReport}
                 </button>
                 <button
                   type="button"
                   onClick={downloadReport}
-                  disabled={resultsOutdated}
+                  disabled={busy || resultsOutdated}
                 >
                   {t.downloadReport}
                 </button>
@@ -649,23 +802,30 @@ export default function Home() {
             </section>
           ) : null}
 
-          <div className="filter-tabs" role="tablist" aria-label={t.resultTitle}>
-            {filters.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={filter === item.key}
-                className={filter === item.key ? "active" : ""}
-                onClick={() => setFilter(item.key)}
-              >
-                {item.label}
-                <span>{item.count}</span>
-              </button>
-            ))}
-          </div>
+          <section className="automatic-results" aria-labelledby="automatic-details-title">
+            <div className="automatic-results-heading">
+              <h3 id="automatic-details-title">{t.automaticDetails}</h3>
+              <p>{t.automaticDetailsHint}</p>
+            </div>
+            <div className="filter-tabs" role="group" aria-label={t.automaticDetails}>
+              {filters.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  aria-pressed={filter === item.key}
+                  className={filter === item.key ? "active" : ""}
+                  onClick={() => {
+                    setFilter(item.key);
+                    setComparisonFeedback(t.visibleItems(item.label, item.count));
+                  }}
+                >
+                  {item.label}
+                  <span>{item.count}</span>
+                </button>
+              ))}
+            </div>
 
-          <div className="result-list">
+            <div className="result-list">
             {visibleSourceFacts.map((fact) => (
               <ResultCard key={fact.id} fact={fact} locale={locale} />
             ))}
@@ -686,7 +846,8 @@ export default function Home() {
                 <p>{t.emptyBody}</p>
               </div>
             ) : null}
-          </div>
+            </div>
+          </section>
 
           <aside className="disclaimer">
             <span aria-hidden="true">i</span>
@@ -699,6 +860,15 @@ export default function Home() {
         <span>KeepFacts</span>
         <p>
           {t.footerPrefix} v{APP_VERSION} · {t.footer}
+          {APP_COMMIT_SHA !== "local" ? (
+            <span
+              className="commit-sha"
+              title={APP_COMMIT_SHA}
+              aria-label={`${locale === "zh" ? "构建提交" : "Build commit"} ${APP_COMMIT_SHA}`}
+            >
+              {` · ${APP_COMMIT_SHA.slice(0, 7)}`}
+            </span>
+          ) : null}
         </p>
       </footer>
     </main>

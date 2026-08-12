@@ -2,6 +2,32 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.1.5] - 2026-08-12
+
+### Added
+
+- Add source and rewrite values plus nearby context to every Markdown report
+  item, together with the app version and build commit.
+- Add browser regression tests for desktop and 390 px mobile layouts,
+  accessibility, keyboard use, report export, localization, and stale results.
+
+### Changed
+
+- Run requested comparisons in a module Web Worker with cancellable, stale-safe
+  result delivery and visible busy feedback.
+- Explain formatting-equivalent preserved facts side by side in the interface.
+- Clarify that result filters apply only to automatic facts and use native
+  pressed-button semantics.
+- Improve focus management, live result announcements, text contrast, reduced
+  motion behavior, and localized page titles.
+- Place optional must-preserve input before the comparison action.
+
+### Fixed
+
+- Omit empty must-preserve sections from reports.
+- Preserve the actual source and rewrite spelling of normalized must-preserve
+  matches in result context and exported reports.
+
 ## [0.1.4] - 2026-08-12
 
 ### Changed

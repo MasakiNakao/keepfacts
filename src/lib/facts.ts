@@ -28,6 +28,7 @@ export interface Fact {
 export interface ComparedFact extends Fact {
   status: FactStatus;
   reviewReason?: "changed" | "missing" | "invalid" | "not-in-source";
+  sourceMatch?: Fact;
   matched?: Fact;
   possibleMatch?: Fact;
 }
@@ -1004,6 +1005,42 @@ function findRequired(revision: string, required: string) {
   return -1;
 }
 
+function findRequiredInText(text: string, normalized: string) {
+  const normalizedText = normalizeRequired(text);
+  const normalizedStart = findRequired(normalizedText, normalized);
+  if (normalizedStart === -1) return undefined;
+
+  let collapsed = "";
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let pendingSpaceStart: number | undefined;
+  const graphemes = new Intl.Segmenter(undefined, {
+    granularity: "grapheme",
+  }).segment(text);
+  for (const { segment, index } of graphemes) {
+    const end = index + segment.length;
+    if (/^\s+$/u.test(segment)) {
+      if (collapsed && !collapsed.endsWith(" ")) pendingSpaceStart ??= index;
+      continue;
+    }
+    if (pendingSpaceStart !== undefined) {
+      collapsed += " ";
+      starts.push(pendingSpaceStart);
+      ends.push(index);
+      pendingSpaceStart = undefined;
+    }
+    const normalizedSegment = normalizeRequired(segment);
+    collapsed += normalizedSegment;
+    for (let offset = 0; offset < normalizedSegment.length; offset += 1) {
+      starts.push(index);
+      ends.push(end);
+    }
+  }
+  const rawStart = starts[normalizedStart] ?? 0;
+  const rawEnd = ends[normalizedStart + normalized.length - 1] ?? rawStart;
+  return { start: rawStart, end: rawEnd };
+}
+
 function requiredLines(required: string) {
   const seen = new Set<string>();
   return required
@@ -1031,15 +1068,15 @@ function compareRequiredFacts(
   source: string,
   revision: string,
 ): ComparedFact[] {
-  const sourceContextText = source.replace(/\s+/g, " ").trim();
-  const revisionContextText = revision.replace(/\s+/g, " ").trim();
-  const normalizedSource = normalizeRequired(sourceContextText);
-  const normalizedRevision = normalizeRequired(revisionContextText);
   return requiredLines(required).map(({ raw, normalized }, index) => {
-      const sourceStart = findRequired(normalizedSource, normalized);
-      const revisionStart = findRequired(normalizedRevision, normalized);
-      const presentInSource = sourceStart !== -1;
-      const preserved = revisionStart !== -1;
+      const sourceOccurrence = findRequiredInText(source, normalized);
+      const revisionOccurrence = findRequiredInText(revision, normalized);
+      const presentInSource = sourceOccurrence !== undefined;
+      const preserved = revisionOccurrence !== undefined;
+      const sourceStart = sourceOccurrence?.start ?? 0;
+      const sourceEnd = sourceOccurrence?.end ?? raw.length;
+      const revisionStart = revisionOccurrence?.start ?? 0;
+      const revisionEnd = revisionOccurrence?.end ?? raw.length;
       const base: Fact = {
         id: `required-${index}-${normalized}`,
         kind: "required",
@@ -1047,15 +1084,14 @@ function compareRequiredFacts(
         normalized,
         valid: true,
         start: presentInSource ? sourceStart : 0,
-        end: presentInSource ? sourceStart + normalized.length : raw.length,
+        end: sourceEnd,
         context: presentInSource
-          ? makeContext(
-              sourceContextText,
-              sourceStart,
-              sourceStart + normalized.length,
-            )
+          ? makeContext(source, sourceStart, sourceEnd)
           : raw,
       };
+      const sourceMatch = presentInSource
+        ? { ...base, raw: source.slice(sourceStart, sourceEnd) }
+        : undefined;
 
       if (!presentInSource) {
         return {
@@ -1066,13 +1102,10 @@ function compareRequiredFacts(
             ? {
                 ...base,
                 id: `required-revision-${index}-${normalized}`,
+                raw: revision.slice(revisionStart, revisionEnd),
                 start: revisionStart,
-                end: revisionStart + normalized.length,
-                context: makeContext(
-                  revisionContextText,
-                  revisionStart,
-                  revisionStart + normalized.length,
-                ),
+                end: revisionEnd,
+                context: makeContext(revision, revisionStart, revisionEnd),
               }
             : undefined,
         };
@@ -1083,22 +1116,21 @@ function compareRequiredFacts(
           ...base,
           status: "review",
           reviewReason: "missing",
+          sourceMatch,
         };
       }
 
       return {
         ...base,
         status: "preserved",
+        sourceMatch,
         matched: {
           ...base,
           id: `required-match-${index}-${normalized}`,
+          raw: revision.slice(revisionStart, revisionEnd),
           start: revisionStart,
-          end: revisionStart + normalized.length,
-          context: makeContext(
-            revisionContextText,
-            revisionStart,
-            revisionStart + normalized.length,
-          ),
+          end: revisionEnd,
+          context: makeContext(revision, revisionStart, revisionEnd),
         },
       };
     });

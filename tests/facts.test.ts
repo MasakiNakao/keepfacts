@@ -494,6 +494,32 @@ test("counts a source-only required item as missing from the rewrite", () => {
   assert.equal(comparison.requiredPreservedCount, 0);
 });
 
+test("maps normalized required content back to original values and contexts", () => {
+  for (const [source, revision, requiredValue, sourceRaw, revisionRaw] of [
+    [
+      "  Brand   Ａlpha ships today.",
+      "Brand Alpha ships tomorrow.",
+      "Brand Alpha",
+      "Brand   Ａlpha",
+      "Brand Alpha",
+    ],
+    ["cafe\u0301 ships today.", "café ships tomorrow.", "café", "cafe\u0301", "café"],
+    ["가 ships today.", "가 ships tomorrow.", "가", "가", "가"],
+  ]) {
+    const comparison = compareFacts(source, revision, requiredValue);
+    const required = comparison.requiredFacts[0];
+
+    assert.equal(required?.status, "preserved", requiredValue);
+    assert.equal(required?.sourceMatch?.raw, sourceRaw, requiredValue);
+    assert.equal(required?.matched?.raw, revisionRaw, requiredValue);
+    assert.ok(
+      required?.sourceMatch?.context.includes(sourceRaw.replace(/\s+/gu, " ")),
+      requiredValue,
+    );
+    assert.ok(required?.matched?.context.includes(revisionRaw), requiredValue);
+  }
+});
+
 test("builds a deterministic bilingual Markdown report", () => {
   const comparison = compareFacts(
     "预算为¥30,000，日期为2026-09-15。",
@@ -503,11 +529,17 @@ test("builds a deterministic bilingual Markdown report", () => {
   const report = buildMarkdownReport(
     comparison,
     "zh",
-    new Date("2026-08-11T00:00:00.000Z"),
+    {
+      generatedAt: new Date("2026-08-11T00:00:00.000Z"),
+      appVersion: "0.1.5",
+      commitSha: "0123456789abcdef0123456789abcdef01234567",
+    },
   );
 
   assert.match(report, /# KeepFacts 核对报告/);
-  assert.match(report, /生成日期: 2026-08-11/);
+  assert.match(report, /\*\*生成时间:\*\* 2026-08-11/);
+  assert.match(report, /\*\*KeepFacts 版本:\*\* v0\.1\.5/);
+  assert.match(report, /0123456789abcdef0123456789abcdef01234567/);
   assert.match(report, /## 自动事实摘要/);
   assert.match(report, /## 必须保留摘要/);
   assert.match(report, /\| 已保留 \| 1 \|/);
@@ -516,6 +548,10 @@ test("builds a deterministic bilingual Markdown report", () => {
   assert.match(report, /\| 必保保留率 \| 100% \|/);
   assert.match(report, /2026-09-15/);
   assert.match(report, /2026-09-18/);
+  assert.match(report, /\*\*原文值:\*\* `¥30,000`/);
+  assert.match(report, /\*\*改写值:\*\* `3万元`/);
+  assert.match(report, /\*\*原文语境:\*\*/);
+  assert.match(report, /\*\*改写语境:\*\*/);
 });
 
 test("preserves backticks in Markdown report values", () => {
@@ -534,7 +570,30 @@ test("formats report dates in local time", () => {
   const comparison = compareFacts("10 users", "10 users");
   const report = buildMarkdownReport(comparison, "en", generatedAt);
 
-  assert.match(report, /Generated: 2026-08-12/);
+  assert.match(report, /\*\*Generated:\*\* 2026-08-12/);
+});
+
+test("omits empty required report sections and records both sides of every fact", () => {
+  const comparison = compareFacts(
+    "Alpha has 100 users. Beta has 200 users.",
+    "Alpha has 80 users. Beta is omitted. Gamma has 300 users.",
+  );
+  const report = buildMarkdownReport(comparison, "en", {
+    generatedAt: new Date(2026, 7, 12, 12, 0),
+    appVersion: "0.1.5",
+    commitSha: "test-sha",
+  });
+
+  assert.doesNotMatch(report, /Must-preserve summary/);
+  assert.doesNotMatch(report, /Must-preserve checks/);
+  assert.match(report, /## Automatic facts: needs review/);
+  assert.match(report, /## Automatic facts: new in rewrite/);
+  assert.match(report, /\*\*Source value:\*\*/);
+  assert.match(report, /\*\*Rewrite value:\*\*/);
+  assert.match(report, /\*\*Source context:\*\*/);
+  assert.match(report, /\*\*Rewrite context:\*\*/);
+  assert.match(report, /\*\*Rewrite value:\*\* Not found/);
+  assert.match(report, /\*\*Source value:\*\* Not found/);
 });
 
 test("passes the public validation corpus", () => {

@@ -27,17 +27,23 @@ export interface Fact {
 
 export interface ComparedFact extends Fact {
   status: FactStatus;
-  reviewReason?: "changed" | "missing" | "invalid";
+  reviewReason?: "changed" | "missing" | "invalid" | "not-in-source";
   matched?: Fact;
   possibleMatch?: Fact;
 }
 
 export interface FactComparison {
   sourceFacts: ComparedFact[];
+  requiredFacts: ComparedFact[];
   addedFacts: Fact[];
   preservedCount: number;
   reviewCount: number;
   addedCount: number;
+  requiredCount: number;
+  requiredPreservedCount: number;
+  requiredMissingCount: number;
+  requiredNotInSourceCount: number;
+  requiredCheckableCount: number;
 }
 
 interface PatternDefinition {
@@ -378,7 +384,7 @@ const PATTERNS: PatternDefinition[] = [
   {
     kind: "money",
     pattern:
-      /(?:US\$|C\$|A\$|HK\$|USD|EUR|GBP|CNY|RMB|JPY|CAD|AUD|HKD|[$€£¥￥])\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:k|m|bn|万|亿))?|\d[\d,]*(?:\.\d+)?\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元)/giu,
+      /(?:US\$|C\$|A\$|HK\$|USD|EUR|GBP|CNY|RMB|JPY|CAD|AUD|HKD|[$€£¥￥])\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!,\d)(?:\s*(?:k|m|bn|万|亿))?|(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!,\d)\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元)/giu,
     normalize: normalizeMoney,
   },
   {
@@ -395,7 +401,7 @@ const PATTERNS: PatternDefinition[] = [
   {
     kind: "measurement",
     pattern:
-      /(?<![\d.])-?\d[\d,]*(?:\.\d+)?\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|g|m|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)(?![A-Z\d])/giu,
+      /(?<![\d.,])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!,\d)\s*(?:kilograms?|grams?|milligrams?|kilometers?|meters?|centimeters?|millimeters?|people|persons?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|kg|mg|km|cm|mm|mb|gb|tb|kb|ms|g|m|人|名|个|次|天|周|月|年|小时|分钟|秒|公里|米|厘米|毫米|公斤|千克|克|毫克|份|页|条|家|台|套|亩)(?![A-Z\d])/giu,
     normalize: normalizeMeasurement,
   },
   {
@@ -405,7 +411,8 @@ const PATTERNS: PatternDefinition[] = [
   },
   {
     kind: "number",
-    pattern: /(?<![\d.])-?\d[\d,]*(?:\.\d+)?(?!\d)(?!\.\d)/gu,
+    pattern:
+      /(?<![\d.,])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!\d)(?!\.\d)(?!,\d)/gu,
     normalize: normalizeNumber,
   },
 ];
@@ -451,11 +458,16 @@ export function extractFacts(text: string): Fact[] {
   return facts.sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
-function contextFingerprint(fact: Fact) {
-  return toAscii(fact.context)
+function textFingerprint(value: string) {
+  return toAscii(value)
     .toLowerCase()
-    .replace(toAscii(fact.raw).toLowerCase(), "")
-    .replace(/[\p{P}\p{S}\p{N}\s]+/gu, "");
+    .replace(/[\p{P}\p{S}\s]+/gu, "");
+}
+
+function contextFingerprint(fact: Fact) {
+  const normalizedContext = toAscii(fact.context).toLowerCase();
+  const normalizedRaw = toAscii(fact.raw).toLowerCase();
+  return textFingerprint(normalizedContext.replace(normalizedRaw, ""));
 }
 
 function bigrams(value: string) {
@@ -467,9 +479,9 @@ function bigrams(value: string) {
   return result;
 }
 
-function contextSimilarity(left: Fact, right: Fact) {
-  const leftPairs = bigrams(contextFingerprint(left));
-  const rightPairs = bigrams(contextFingerprint(right));
+function fingerprintSimilarity(left: string, right: string) {
+  const leftPairs = bigrams(left);
+  const rightPairs = bigrams(right);
   if (!leftPairs.size || !rightPairs.size) return 0;
   let overlapCount = 0;
   for (const pair of leftPairs) {
@@ -478,11 +490,221 @@ function contextSimilarity(left: Fact, right: Fact) {
   return (2 * overlapCount) / (leftPairs.size + rightPairs.size);
 }
 
+function nearbyContext(text: string, fact: Fact) {
+  const leftWindow = text.slice(Math.max(0, fact.start - 64), fact.start);
+  const rightWindow = text.slice(fact.end, Math.min(text.length, fact.end + 64));
+  let leftBoundary = -1;
+  for (let index = leftWindow.length - 1; index >= 0; index -= 1) {
+    if (/[。！？.!?；;，,\/|\n]/u.test(leftWindow[index])) {
+      leftBoundary = index;
+      break;
+    }
+  }
+  let rightBoundary = rightWindow.length;
+  for (let index = 0; index < rightWindow.length; index += 1) {
+    if (/[。！？.!?；;，,\/|\n]/u.test(rightWindow[index])) {
+      rightBoundary = index;
+      break;
+    }
+  }
+
+  return {
+    before: textFingerprint(leftWindow.slice(leftBoundary + 1)),
+    after: textFingerprint(rightWindow.slice(0, rightBoundary)),
+  };
+}
+
+function contextSimilarity(
+  left: Fact,
+  right: Fact,
+  leftText?: string,
+  rightText?: string,
+) {
+  const leftPairs = bigrams(contextFingerprint(left));
+  const rightPairs = bigrams(contextFingerprint(right));
+  let broadScore = 0;
+  let overlapCount = 0;
+  for (const pair of leftPairs) {
+    if (rightPairs.has(pair)) overlapCount += 1;
+  }
+  if (leftPairs.size && rightPairs.size) {
+    broadScore = (2 * overlapCount) / (leftPairs.size + rightPairs.size);
+  }
+
+  if (leftText === undefined || rightText === undefined) return broadScore;
+
+  const leftNearby = nearbyContext(leftText, left);
+  const rightNearby = nearbyContext(rightText, right);
+  const nearbyScore = fingerprintSimilarity(
+    `${leftNearby.before}${leftNearby.after}`,
+    `${rightNearby.before}${rightNearby.after}`,
+  );
+
+  return nearbyScore * 0.85 + broadScore * 0.15;
+}
+
+function relativePosition(fact: Fact, textLength: number) {
+  if (textLength <= 0) return 0;
+  return (fact.start + fact.end) / 2 / textLength;
+}
+
+function maximizeAssignment(scores: number[][]) {
+  const rowCount = scores.length;
+  const columnCount = scores[0]?.length ?? 0;
+  const rowPotential = Array(rowCount + 1).fill(0) as number[];
+  const columnPotential = Array(columnCount + 1).fill(0) as number[];
+  const matchedRow = Array(columnCount + 1).fill(0) as number[];
+  const previousColumn = Array(columnCount + 1).fill(0) as number[];
+
+  for (let row = 1; row <= rowCount; row += 1) {
+    matchedRow[0] = row;
+    let currentColumn = 0;
+    const minimumCost = Array(columnCount + 1).fill(
+      Number.POSITIVE_INFINITY,
+    ) as number[];
+    const used = Array(columnCount + 1).fill(false) as boolean[];
+
+    do {
+      used[currentColumn] = true;
+      const currentRow = matchedRow[currentColumn];
+      let delta = Number.POSITIVE_INFINITY;
+      let nextColumn = 0;
+
+      for (let column = 1; column <= columnCount; column += 1) {
+        if (used[column]) continue;
+        const cost =
+          -scores[currentRow - 1][column - 1] -
+          rowPotential[currentRow] -
+          columnPotential[column];
+
+        if (cost < minimumCost[column]) {
+          minimumCost[column] = cost;
+          previousColumn[column] = currentColumn;
+        }
+        if (minimumCost[column] < delta) {
+          delta = minimumCost[column];
+          nextColumn = column;
+        }
+      }
+
+      for (let column = 0; column <= columnCount; column += 1) {
+        if (used[column]) {
+          rowPotential[matchedRow[column]] += delta;
+          columnPotential[column] -= delta;
+        } else {
+          minimumCost[column] -= delta;
+        }
+      }
+      currentColumn = nextColumn;
+    } while (matchedRow[currentColumn] !== 0);
+
+    do {
+      const nextColumn = previousColumn[currentColumn];
+      matchedRow[currentColumn] = matchedRow[nextColumn];
+      currentColumn = nextColumn;
+    } while (currentColumn !== 0);
+  }
+
+  const assignment = Array(rowCount).fill(-1) as number[];
+  for (let column = 1; column <= columnCount; column += 1) {
+    if (matchedRow[column] > 0) {
+      assignment[matchedRow[column] - 1] = column - 1;
+    }
+  }
+  return assignment;
+}
+
+function confidentBestIndex(scores: number[]) {
+  const ranked = scores
+    .map((score, index) => ({ index, score }))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const best = ranked[0];
+  const runnerUp = ranked[1];
+
+  return best &&
+    best.score >= 0.25 &&
+    (!runnerUp || best.score - runnerUp.score >= 0.08)
+    ? best.index
+    : -1;
+}
+
+function pairFacts(
+  sourceFacts: Fact[],
+  revisionFacts: Fact[],
+  sourceText: string,
+  revisionText: string,
+) {
+  const pairs = new Map<string, Fact>();
+  const kinds = new Set(sourceFacts.map((fact) => fact.kind));
+
+  for (const kind of kinds) {
+    const sources = sourceFacts.filter((fact) => fact.kind === kind);
+    const revisions = revisionFacts.filter((fact) => fact.kind === kind);
+    if (!revisions.length) continue;
+
+    const contextScores = sources.map((sourceFact) =>
+      revisions.map((revisionFact) =>
+        contextSimilarity(sourceFact, revisionFact, sourceText, revisionText),
+      ),
+    );
+
+    const confidentRevisionIndexes = contextScores.map(confidentBestIndex);
+    const confidentSourceIndexes = revisions.map((_, revisionIndex) =>
+      confidentBestIndex(
+        contextScores.map((row) => row[revisionIndex] ?? 0),
+      ),
+    );
+    const pairLimit = Math.min(sources.length, revisions.length);
+    const base = pairLimit + 1;
+    const highBonus = base ** 3;
+    const exactBonus = base ** 2;
+    const forbidden = -(highBonus * base + exactBonus);
+    const scores = sources.map((sourceFact, sourceIndex) => [
+      ...revisions.map((revisionFact, revisionIndex) => {
+        const contextConfident =
+          confidentRevisionIndexes[sourceIndex] === revisionIndex &&
+          confidentSourceIndexes[revisionIndex] === sourceIndex;
+        const exact = sourceFact.normalized === revisionFact.normalized;
+        if (!contextConfident && !exact) return forbidden;
+
+        const positionScore =
+          1 -
+          Math.min(
+            1,
+            Math.abs(
+              relativePosition(sourceFact, sourceText.length) -
+                relativePosition(revisionFact, revisionText.length),
+            ),
+          );
+        const stableTieBreak =
+          positionScore * 0.001 +
+          (revisions.length - revisionIndex) * 0.0000001;
+
+        return (
+          (contextConfident ? highBonus : 0) +
+          (exact ? exactBonus : 0) +
+          contextScores[sourceIndex][revisionIndex] * base +
+          stableTieBreak
+        );
+      }),
+      ...sources.map(() => 0),
+    ]);
+
+    for (const [sourceIndex, columnIndex] of maximizeAssignment(scores).entries()) {
+      if (columnIndex < revisions.length && scores[sourceIndex][columnIndex] > 0) {
+        pairs.set(sources[sourceIndex].id, revisions[columnIndex]);
+      }
+    }
+  }
+
+  return pairs;
+}
+
 function normalizeRequired(value: string) {
   return toAscii(value).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function includesRequired(revision: string, required: string) {
+function findRequired(revision: string, required: string) {
   let start = revision.indexOf(required);
   while (start !== -1) {
     const before = revision[start - 1] ?? "";
@@ -494,15 +716,22 @@ function includesRequired(revision: string, required: string) {
     const rightMatches =
       !requiresRightBoundary || !/[a-z0-9]/i.test(after);
 
-    if (leftMatches && rightMatches) return true;
+    if (leftMatches && rightMatches) return start;
     start = revision.indexOf(required, start + 1);
   }
 
-  return false;
+  return -1;
 }
 
-function compareRequiredFacts(required: string, revision: string): ComparedFact[] {
-  const normalizedRevision = normalizeRequired(revision);
+function compareRequiredFacts(
+  required: string,
+  source: string,
+  revision: string,
+): ComparedFact[] {
+  const sourceContextText = source.replace(/\s+/g, " ").trim();
+  const revisionContextText = revision.replace(/\s+/g, " ").trim();
+  const normalizedSource = normalizeRequired(sourceContextText);
+  const normalizedRevision = normalizeRequired(revisionContextText);
   const seen = new Set<string>();
 
   return required
@@ -517,17 +746,47 @@ function compareRequiredFacts(required: string, revision: string): ComparedFact[
     })
     .map((raw, index) => {
       const normalized = normalizeRequired(raw);
-      const preserved = includesRequired(normalizedRevision, normalized);
+      const sourceStart = findRequired(normalizedSource, normalized);
+      const revisionStart = findRequired(normalizedRevision, normalized);
+      const presentInSource = sourceStart !== -1;
+      const preserved = revisionStart !== -1;
       const base: Fact = {
         id: `required-${index}-${normalized}`,
         kind: "required",
         raw,
         normalized,
         valid: true,
-        start: 0,
-        end: raw.length,
-        context: raw,
+        start: presentInSource ? sourceStart : 0,
+        end: presentInSource ? sourceStart + normalized.length : raw.length,
+        context: presentInSource
+          ? makeContext(
+              sourceContextText,
+              sourceStart,
+              sourceStart + normalized.length,
+            )
+          : raw,
       };
+
+      if (!presentInSource) {
+        return {
+          ...base,
+          status: "review",
+          reviewReason: "not-in-source",
+          matched: preserved
+            ? {
+                ...base,
+                id: `required-revision-${index}-${normalized}`,
+                start: revisionStart,
+                end: revisionStart + normalized.length,
+                context: makeContext(
+                  revisionContextText,
+                  revisionStart,
+                  revisionStart + normalized.length,
+                ),
+              }
+            : undefined,
+        };
+      }
 
       if (!preserved) {
         return {
@@ -543,7 +802,13 @@ function compareRequiredFacts(required: string, revision: string): ComparedFact[
         matched: {
           ...base,
           id: `required-match-${index}-${normalized}`,
-          context: revision.replace(/\s+/g, " ").trim().slice(0, 120),
+          start: revisionStart,
+          end: revisionStart + normalized.length,
+          context: makeContext(
+            revisionContextText,
+            revisionStart,
+            revisionStart + normalized.length,
+          ),
         },
       };
     });
@@ -557,55 +822,28 @@ export function compareFacts(
   const sourceFacts = extractFacts(source);
   const revisionFacts = extractFacts(revision);
   const matchedRevisionIds = new Set<string>();
+  const pairs = pairFacts(sourceFacts, revisionFacts, source, revision);
 
   const compared: ComparedFact[] = sourceFacts.map((fact) => {
-    const exactMatch = revisionFacts.find(
-      (candidate) =>
-        !matchedRevisionIds.has(candidate.id) &&
-        candidate.kind === fact.kind &&
-        candidate.normalized === fact.normalized,
-    );
-
-    if (exactMatch && fact.valid && exactMatch.valid) {
-      matchedRevisionIds.add(exactMatch.id);
-      return { ...fact, status: "preserved", matched: exactMatch };
-    }
-
-    if (exactMatch) {
-      matchedRevisionIds.add(exactMatch.id);
-      return {
-        ...fact,
-        status: "review",
-        reviewReason: "invalid",
-        possibleMatch: exactMatch,
-      };
-    }
-
-    const candidates = revisionFacts
-      .filter(
-        (candidate) =>
-          !matchedRevisionIds.has(candidate.id) && candidate.kind === fact.kind,
-      )
-      .map((candidate) => ({
-        candidate,
-        score: contextSimilarity(fact, candidate),
-      }))
-      .sort((a, b) => b.score - a.score);
-
-    const possible = candidates[0];
-    const runnerUp = candidates[1];
+    const match = pairs.get(fact.id);
 
     if (
-      possible &&
-      possible.score >= 0.25 &&
-      (!runnerUp || possible.score - runnerUp.score >= 0.08)
+      match &&
+      fact.normalized === match.normalized &&
+      fact.valid &&
+      match.valid
     ) {
-      matchedRevisionIds.add(possible.candidate.id);
+      matchedRevisionIds.add(match.id);
+      return { ...fact, status: "preserved", matched: match };
+    }
+
+    if (match) {
+      matchedRevisionIds.add(match.id);
       return {
         ...fact,
         status: "review",
-        reviewReason: fact.valid ? "changed" : "invalid",
-        possibleMatch: possible.candidate,
+        reviewReason: fact.valid && match.valid ? "changed" : "invalid",
+        possibleMatch: match,
       };
     }
 
@@ -619,18 +857,34 @@ export function compareFacts(
   const addedFacts = revisionFacts.filter(
     (fact) => !matchedRevisionIds.has(fact.id),
   );
-  const requiredFacts = compareRequiredFacts(required, revision);
-  const allCompared = [...requiredFacts, ...compared];
-  const preservedCount = allCompared.filter(
+  const requiredFacts = compareRequiredFacts(required, source, revision);
+  const preservedCount = compared.filter(
     (fact) => fact.status === "preserved",
   ).length;
-  const reviewCount = allCompared.length - preservedCount;
+  const reviewCount = compared.length - preservedCount;
+  const requiredPreservedCount = requiredFacts.filter(
+    (fact) => fact.status === "preserved",
+  ).length;
+  const requiredMissingCount = requiredFacts.filter(
+    (fact) => fact.reviewReason === "missing",
+  ).length;
+  const requiredNotInSourceCount = requiredFacts.filter(
+    (fact) => fact.reviewReason === "not-in-source",
+  ).length;
+  const requiredCheckableCount =
+    requiredFacts.length - requiredNotInSourceCount;
 
   return {
-    sourceFacts: allCompared,
+    sourceFacts: compared,
+    requiredFacts,
     addedFacts,
     preservedCount,
     reviewCount,
     addedCount: addedFacts.length,
+    requiredCount: requiredFacts.length,
+    requiredPreservedCount,
+    requiredMissingCount,
+    requiredNotInSourceCount,
+    requiredCheckableCount,
   };
 }

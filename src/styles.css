@@ -353,6 +353,22 @@ main {
   width: 100%;
 }
 
+.required-input-feedback {
+  background: var(--yellow-pale);
+  color: #785000;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+  min-height: 0;
+  padding: 0 18px;
+}
+
+.required-input-feedback:not(:empty) {
+  border-top: 1px solid #ead69f;
+  padding-bottom: 10px;
+  padding-top: 10px;
+}
+
 .compare-button {
   align-items: center;
   background: var(--green);
@@ -444,6 +460,11 @@ main {
   color: var(--green);
 }
 
+.report-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .report-feedback {
   color: var(--green);
   font-size: 10px;
@@ -455,6 +476,17 @@ main {
 .result-tools .score-ring {
   grid-column: 2;
   grid-row: 1 / span 2;
+}
+
+.stale-notice {
+  background: var(--yellow-pale);
+  border: 1px solid #ead69f;
+  border-radius: 12px;
+  color: #785000;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  padding: 11px 14px;
 }
 
 .score-ring {
@@ -522,6 +554,72 @@ main {
 .summary-added {
   background: var(--blue-pale);
   border-color: #cfdee7;
+}
+
+.summary-invalid {
+  background: #f4ece7;
+  border-color: #ddc8bc;
+}
+
+.required-results {
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  margin-top: 34px;
+  padding: 30px 0 24px;
+}
+
+.required-results-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.required-results-heading .eyebrow {
+  margin-bottom: 7px;
+}
+
+.required-results-heading h3 {
+  font-size: 22px;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.required-score {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.required-score strong {
+  font-size: 21px;
+}
+
+.required-score span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.required-summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.required-summary-grid .summary-card {
+  min-height: 74px;
+  padding: 14px 16px;
+}
+
+.required-summary-grid .summary-card strong {
+  font-size: 24px;
+}
+
+.required-result-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
 }
 
 .filter-tabs {
@@ -874,6 +972,10 @@ footer p {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .required-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .result-heading {
     align-items: flex-start;
     flex-direction: column;
@@ -950,6 +1052,10 @@ footer p {
 
   .summary-card strong {
     font-size: 25px;
+  }
+
+  .required-results-heading {
+    align-items: flex-start;
   }
 
   .filter-tabs button {

@@ -7,10 +7,17 @@ const labels: Record<
   {
     title: string;
     generated: string;
-    summary: string;
     metric: string;
     value: string;
     sourceFacts: string;
+    automaticSummary: string;
+    requiredSummary: string;
+    requiredChecks: string;
+    requiredCount: string;
+    requiredCheckable: string;
+    requiredMissing: string;
+    requiredNotInSource: string;
+    requiredRetention: string;
     preserved: string;
     review: string;
     added: string;
@@ -19,6 +26,8 @@ const labels: Record<
     changed: string;
     missing: string;
     invalid: string;
+    notInSource: string;
+    notInSourceAdded: string;
     newFact: string;
     disclaimer: string;
     kinds: Record<FactKind, string>;
@@ -27,18 +36,27 @@ const labels: Record<
   zh: {
     title: "KeepFacts 核对报告",
     generated: "生成日期",
-    summary: "摘要",
     metric: "项目",
     value: "结果",
-    sourceFacts: "核对项目",
+    sourceFacts: "自动事实",
+    automaticSummary: "自动事实摘要",
+    requiredSummary: "必须保留摘要",
+    requiredChecks: "必须保留检查",
+    requiredCount: "必保项目",
+    requiredCheckable: "可核对",
+    requiredMissing: "改写缺失",
+    requiredNotInSource: "原文未找到",
+    requiredRetention: "必保保留率",
     preserved: "已保留",
     review: "需确认",
     added: "改写新增",
-    retention: "保留率",
+    retention: "自动事实保留率",
     none: "无",
     changed: "可能改成",
     missing: "改写稿中未找到对应事实",
     invalid: "日期数值超出有效范围",
+    notInSource: "原文中未找到，请检查这项输入",
+    notInSourceAdded: "原文中未找到；仅在改写稿出现，不算作已保留",
     newFact: "只在改写稿中出现",
     disclaimer:
       "KeepFacts 只检查可精确提取的硬事实，不能代替人工判断整段文字的语义是否正确。",
@@ -60,18 +78,28 @@ const labels: Record<
   en: {
     title: "KeepFacts report",
     generated: "Generated",
-    summary: "Summary",
     metric: "Metric",
     value: "Result",
-    sourceFacts: "Items checked",
+    sourceFacts: "Automatic facts",
+    automaticSummary: "Automatic fact summary",
+    requiredSummary: "Must-preserve summary",
+    requiredChecks: "Must-preserve checks",
+    requiredCount: "Required items",
+    requiredCheckable: "Checkable",
+    requiredMissing: "Missing from rewrite",
+    requiredNotInSource: "Not found in source",
+    requiredRetention: "Required retention",
     preserved: "Preserved",
     review: "Needs review",
     added: "New in rewrite",
-    retention: "Retention",
+    retention: "Automatic retention",
     none: "None",
     changed: "Possibly changed to",
     missing: "No corresponding fact found in the rewrite",
     invalid: "Date value is outside the valid calendar range",
+    notInSource: "Not found in the source; check this input",
+    notInSourceAdded:
+      "Not found in the source; appearing only in the rewrite is not preservation",
     newFact: "Appears only in the rewrite",
     disclaimer:
       "KeepFacts checks exact, extractable facts only. It cannot replace human review of the full meaning.",
@@ -113,12 +141,22 @@ function factLine(
 
   if (!added && compared.status === "review") {
     if (compared.reviewReason === "invalid") note = t.invalid;
+    else if (compared.reviewReason === "not-in-source") {
+      note = compared.matched ? t.notInSourceAdded : t.notInSource;
+    }
     else if (compared.possibleMatch) {
       note = `${t.changed} ${inlineCode(compared.possibleMatch.raw)}`;
     } else note = t.missing;
   }
 
   return `- **${t.kinds[fact.kind]}** ${inlineCode(fact.raw)} — ${note}`;
+}
+
+export function formatLocalDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function section(
@@ -143,7 +181,17 @@ export function buildMarkdownReport(
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
-    : 0;
+    : null;
+  const requiredRetention = comparison.requiredCheckableCount
+    ? Math.round(
+        (comparison.requiredPreservedCount /
+          comparison.requiredCheckableCount) *
+          100,
+      )
+    : null;
+  const retentionLabel = retention === null ? "—" : `${retention}%`;
+  const requiredRetentionLabel =
+    requiredRetention === null ? "—" : `${requiredRetention}%`;
   const preserved = comparison.sourceFacts.filter(
     (fact) => fact.status === "preserved",
   );
@@ -154,9 +202,9 @@ export function buildMarkdownReport(
   return [
     `# ${t.title}`,
     "",
-    `${t.generated}: ${generatedAt.toISOString().slice(0, 10)}`,
+    `${t.generated}: ${formatLocalDate(generatedAt)}`,
     "",
-    `## ${t.summary}`,
+    `## ${t.automaticSummary}`,
     "",
     `| ${t.metric} | ${t.value} |`,
     "| --- | ---: |",
@@ -164,8 +212,20 @@ export function buildMarkdownReport(
     `| ${t.preserved} | ${comparison.preservedCount} |`,
     `| ${t.review} | ${comparison.reviewCount} |`,
     `| ${t.added} | ${comparison.addedCount} |`,
-    `| ${t.retention} | ${retention}% |`,
+    `| ${t.retention} | ${retentionLabel} |`,
     "",
+    `## ${t.requiredSummary}`,
+    "",
+    `| ${t.metric} | ${t.value} |`,
+    "| --- | ---: |",
+    `| ${t.requiredCount} | ${comparison.requiredCount} |`,
+    `| ${t.requiredCheckable} | ${comparison.requiredCheckableCount} |`,
+    `| ${t.preserved} | ${comparison.requiredPreservedCount} |`,
+    `| ${t.requiredMissing} | ${comparison.requiredMissingCount} |`,
+    `| ${t.requiredNotInSource} | ${comparison.requiredNotInSourceCount} |`,
+    `| ${t.requiredRetention} | ${requiredRetentionLabel} |`,
+    "",
+    section(t.requiredChecks, comparison.requiredFacts, locale),
     section(t.review, review, locale),
     section(t.preserved, preserved, locale),
     section(t.added, comparison.addedFacts, locale, true),

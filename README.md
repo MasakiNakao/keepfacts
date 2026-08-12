@@ -20,7 +20,7 @@ All analysis runs locally in the browser. No text is uploaded, no account is req
 1. Open the [live demo](https://masakinakao.github.io/keepfacts/).
 2. Paste the original text on the left and the rewrite on the right.
 3. Optionally add one must-preserve name or phrase per line.
-4. Select **Check the facts**, review yellow items, then copy or download the Markdown report.
+4. Select **Check the facts** to create a fixed result, review yellow items, then copy or download the Markdown report. Recheck after editing either text.
 
 ## Why KeepFacts?
 
@@ -43,7 +43,7 @@ It is intentionally narrow:
 - Quoted text and standalone numbers
 - Duplicate facts using occurrence-aware matching
 - Chinese and English formatting equivalence for common facts
-- User-defined names, terms, and phrases that must be preserved
+- User-defined names, terms, and phrases that must be preserved, reported separately from automatic fact retention
 - Copyable and downloadable Markdown review reports
 
 ## Run locally

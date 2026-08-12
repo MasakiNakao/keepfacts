@@ -147,6 +147,48 @@
     "expected": { "preserved": 2, "review": 0, "added": 0 }
   },
   {
+    "id": "reordered-duplicate-context",
+    "category": "matching",
+    "source": "Team A has 100 users. Team B has 100 users.",
+    "revision": "Team B has 100 users. Team A has 80 users.",
+    "expected": { "preserved": 1, "review": 1, "added": 0 }
+  },
+  {
+    "id": "swapped-values-by-context",
+    "category": "matching",
+    "source": "Alpha has 100 users. Beta has 200 users.",
+    "revision": "Alpha has 200 users. Beta has 100 users.",
+    "expected": { "preserved": 0, "review": 2, "added": 0 }
+  },
+  {
+    "id": "same-kind-values-reordered",
+    "category": "matching",
+    "source": "Alpha has 100 users. Beta has 200 users.",
+    "revision": "Beta has 200 users. Alpha has 100 users.",
+    "expected": { "preserved": 2, "review": 0, "added": 0 }
+  },
+  {
+    "id": "slash-separated-duplicate-context",
+    "category": "matching",
+    "source": "Alpha 100 / Beta 100",
+    "revision": "Beta 100 / Alpha 80",
+    "expected": { "preserved": 1, "review": 1, "added": 0 }
+  },
+  {
+    "id": "pipe-separated-duplicate-context",
+    "category": "matching",
+    "source": "Alpha 100 | Beta 100",
+    "revision": "Beta 100 | Alpha 80",
+    "expected": { "preserved": 1, "review": 1, "added": 0 }
+  },
+  {
+    "id": "comma-separated-duplicate-context",
+    "category": "matching",
+    "source": "Alpha 100, Beta 100",
+    "revision": "Beta 100, Alpha 80",
+    "expected": { "preserved": 1, "review": 1, "added": 0 }
+  },
+  {
     "id": "changed-two-fact-types",
     "category": "matching",
     "source": "Budget is $100 and the team has 20 people.",

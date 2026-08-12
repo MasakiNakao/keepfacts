@@ -13,8 +13,17 @@ All notable changes to KeepFacts will be documented here.
 
 ### Changed
 
-- Result totals and retention now include user-defined must-preserve content.
+- Automatic fact retention and must-preserve checks are now reported separately.
+- Matching repeated facts now uses context-aware one-to-one pairing.
 - Refreshed responsive result controls for desktop and mobile layouts.
+
+### Fixed
+
+- Reject must-preserve entries that do not occur in the source text.
+- Use the user's local date for Markdown reports and download filenames.
+- Keep repeated copy and download feedback visible for the full duration.
+- Mark results as outdated after input edits until the user checks again.
+- Update Vite to 8.2.1 to resolve known development-server advisories.
 
 ## [0.1.1] - 2026-08-08
 

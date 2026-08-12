@@ -75,6 +75,111 @@ test("uses multiset matching for repeated facts", () => {
   assert.equal(comparison.reviewCount, 1);
 });
 
+test("matches repeated facts to the correct context", () => {
+  const filler = "Filler sentence without numeric values. ".repeat(5);
+  const comparison = compareFacts(
+    `Alpha group has 100 users. ${filler}Beta group has 100 users.`,
+    `Alpha group has 80 users. ${filler}Beta group has 100 users.`,
+  );
+  const [alpha, beta] = comparison.sourceFacts;
+
+  assert.equal(alpha?.status, "review");
+  assert.equal(alpha?.possibleMatch?.raw, "80");
+  assert.match(alpha?.possibleMatch?.context ?? "", /Alpha group/);
+  assert.equal(beta?.status, "preserved");
+  assert.match(beta?.matched?.context ?? "", /Beta group/);
+});
+
+test("reserves exact repeated matches before suggesting changes", () => {
+  const comparison = compareFacts(
+    "Alpha is 100. Beta remains 100.",
+    "Alpha was removed. Beta remains 100.",
+  );
+  const [alpha, beta] = comparison.sourceFacts;
+
+  assert.equal(alpha?.status, "review");
+  assert.equal(alpha?.possibleMatch, undefined);
+  assert.equal(beta?.status, "preserved");
+  assert.ok(beta?.matched?.id);
+});
+
+test("uses context before value when two facts swap", () => {
+  const comparison = compareFacts(
+    "Alpha has 100 users. Beta has 200 users.",
+    "Alpha has 200 users. Beta has 100 users.",
+  );
+
+  assert.deepEqual(
+    comparison.sourceFacts.map((fact) => ({
+      raw: fact.raw,
+      status: fact.status,
+      possible: fact.possibleMatch?.raw,
+    })),
+    [
+      { raw: "100", status: "review", possible: "200" },
+      { raw: "200", status: "review", possible: "100" },
+    ],
+  );
+  assert.equal(comparison.addedCount, 0);
+});
+
+test("uses mutual context when facts compete for one revision", () => {
+  const comparison = compareFacts(
+    "Alpha has 100 users. Beta has 200 users.",
+    "Alpha has 200 users.",
+  );
+  const [alpha, beta] = comparison.sourceFacts;
+
+  assert.equal(alpha?.status, "review");
+  assert.equal(alpha?.possibleMatch?.raw, "200");
+  assert.match(alpha?.possibleMatch?.context ?? "", /Alpha/);
+  assert.equal(beta?.status, "review");
+  assert.equal(beta?.possibleMatch, undefined);
+  assert.equal(comparison.addedCount, 0);
+});
+
+test("preserves distinct values after their subjects reorder", () => {
+  const comparison = compareFacts(
+    "Alpha has 100 users. Beta has 200 users.",
+    "Beta has 200 users. Alpha has 100 users.",
+  );
+  const [alpha, beta] = comparison.sourceFacts;
+
+  assert.equal(alpha?.status, "preserved");
+  assert.equal(alpha?.matched?.start, 30);
+  assert.equal(beta?.status, "preserved");
+  assert.equal(beta?.matched?.start, 9);
+});
+
+test("keeps numeric labels when pairing reordered duplicate values", () => {
+  const comparison = compareFacts(
+    "Q1 revenue is 100. Q2 revenue is 100.",
+    "Q2 revenue is 100. Q1 revenue is 80.",
+  );
+  const values = comparison.sourceFacts.filter((fact) => fact.raw === "100");
+
+  assert.equal(values[0]?.status, "review");
+  assert.equal(values[0]?.possibleMatch?.raw, "80");
+  assert.equal(values[1]?.status, "preserved");
+  assert.equal(values[1]?.matched?.start, 14);
+});
+
+test("uses list separators as context boundaries", () => {
+  for (const separator of [" / ", " | ", ", "]) {
+    const comparison = compareFacts(
+      `Alpha 100${separator}Beta 100`,
+      `Beta 100${separator}Alpha 80`,
+    );
+    const [alpha, beta] = comparison.sourceFacts;
+
+    assert.equal(alpha?.status, "review", separator);
+    assert.equal(alpha?.possibleMatch?.raw, "80", separator);
+    assert.equal(beta?.status, "preserved", separator);
+    assert.equal(beta?.matched?.raw, "100", separator);
+    assert.equal(comparison.addedCount, 0, separator);
+  }
+});
+
 test("reports facts introduced only in the rewrite", () => {
   const comparison = compareFacts(
     "共有10人参加。",
@@ -140,9 +245,7 @@ test("checks user-defined must-preserve content line by line", () => {
     "Acme\nProject Atlas",
   );
 
-  const requiredFacts = comparison.sourceFacts.filter(
-    (fact) => fact.kind === "required",
-  );
+  const requiredFacts = comparison.requiredFacts;
   assert.equal(requiredFacts.length, 2);
   assert.equal(requiredFacts[0]?.status, "preserved");
   assert.equal(requiredFacts[1]?.status, "review");
@@ -155,13 +258,64 @@ test("deduplicates required content and avoids partial English-word matches", ()
     "The text said Acmeology instead.",
     "AI\nAI\nAcme",
   );
-  const requiredFacts = comparison.sourceFacts.filter(
-    (fact) => fact.kind === "required",
-  );
+  const requiredFacts = comparison.requiredFacts;
 
   assert.equal(requiredFacts.length, 2);
   assert.equal(requiredFacts[0]?.status, "review");
   assert.equal(requiredFacts[1]?.status, "review");
+});
+
+test("keeps must-preserve checks separate from automatic fact totals", () => {
+  const comparison = compareFacts(
+    "The budget is $100.",
+    "The budget remains $100.",
+    "$100",
+  );
+
+  assert.equal(comparison.sourceFacts.length, 1);
+  assert.equal(comparison.preservedCount, 1);
+  assert.equal(comparison.requiredCount, 1);
+  assert.equal(comparison.requiredPreservedCount, 1);
+  assert.equal(comparison.requiredCheckableCount, 1);
+});
+
+test("rejects must-preserve content that is absent from the source", () => {
+  const rewriteOnly = compareFacts(
+    "The standard plan is available.",
+    "The VIP plan is available.",
+    "VIP",
+  );
+  const absentEverywhere = compareFacts(
+    "The standard plan is available.",
+    "The basic plan is available.",
+    "VIP",
+  );
+
+  assert.equal(rewriteOnly.requiredPreservedCount, 0);
+  assert.equal(rewriteOnly.requiredNotInSourceCount, 1);
+  assert.equal(rewriteOnly.requiredCheckableCount, 0);
+  assert.equal(rewriteOnly.requiredFacts[0]?.reviewReason, "not-in-source");
+  assert.ok(rewriteOnly.requiredFacts[0]?.matched);
+  assert.equal(absentEverywhere.requiredFacts[0]?.reviewReason, "not-in-source");
+  assert.equal(absentEverywhere.requiredFacts[0]?.matched, undefined);
+
+  const report = buildMarkdownReport(rewriteOnly, "en");
+  assert.match(
+    report,
+    /appearing only in the rewrite is not preservation/,
+  );
+});
+
+test("counts a source-only required item as missing from the rewrite", () => {
+  const comparison = compareFacts(
+    "Project Atlas launches today.",
+    "The project launches today.",
+    "Project Atlas",
+  );
+
+  assert.equal(comparison.requiredCheckableCount, 1);
+  assert.equal(comparison.requiredMissingCount, 1);
+  assert.equal(comparison.requiredPreservedCount, 0);
 });
 
 test("builds a deterministic bilingual Markdown report", () => {
@@ -178,8 +332,12 @@ test("builds a deterministic bilingual Markdown report", () => {
 
   assert.match(report, /# KeepFacts 核对报告/);
   assert.match(report, /生成日期: 2026-08-11/);
-  assert.match(report, /\| 已保留 \| 2 \|/);
+  assert.match(report, /## 自动事实摘要/);
+  assert.match(report, /## 必须保留摘要/);
+  assert.match(report, /\| 已保留 \| 1 \|/);
   assert.match(report, /\| 需确认 \| 1 \|/);
+  assert.match(report, /\| 必保项目 \| 1 \|/);
+  assert.match(report, /\| 必保保留率 \| 100% \|/);
   assert.match(report, /2026-09-15/);
   assert.match(report, /2026-09-18/);
 });
@@ -193,6 +351,14 @@ test("preserves backticks in Markdown report values", () => {
   );
 
   assert.match(report, /`` `v1` ``/);
+});
+
+test("formats report dates in local time", () => {
+  const generatedAt = new Date(2026, 7, 12, 0, 30);
+  const comparison = compareFacts("10 users", "10 users");
+  const report = buildMarkdownReport(comparison, "en", generatedAt);
+
+  assert.match(report, /Generated: 2026-08-12/);
 });
 
 test("passes the public validation corpus", () => {

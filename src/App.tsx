@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   compareFacts,
   type ComparedFact,
   type Fact,
   type FactKind,
 } from "./lib/facts";
-import { buildMarkdownReport } from "./lib/report";
+import { buildMarkdownReport, formatLocalDate } from "./lib/report";
 
 type Locale = "zh" | "en";
 type Filter = "all" | "review" | "preserved" | "added";
@@ -48,7 +48,8 @@ const copy = {
     loadExample: "载入示例",
     clear: "清空",
     compare: "开始核对",
-    compareHint: "无需模型或 API Key，结果可解释",
+    compareHint: "点击后生成一份固定结果；修改内容后请重新核对",
+    resultsOutdated: "输入内容已更改，以下仍是上次核对结果。请重新核对后再导出报告。",
     resultTitle: "核对结果",
     resultIntro: "先看需要人工确认的项目，再决定是否接受这次改写。",
     copyReport: "复制报告",
@@ -56,11 +57,19 @@ const copy = {
     copied: "报告已复制",
     copyFailed: "复制失败，请使用下载功能",
     downloaded: "报告已下载",
-    scanned: "核对项目",
+    scanned: "自动事实",
     preserved: "已保留",
     review: "需确认",
     added: "改写新增",
-    score: "保留率",
+    score: "自动保留率",
+    requiredResults: "必须保留检查",
+    requiredConfigured: "已配置",
+    requiredCheckable: "可核对",
+    requiredMissing: "改写缺失",
+    requiredNotInSource: "原文未找到",
+    requiredRetention: "必保保留率",
+    requiredInputWarning: (count: number) =>
+      `${count} 条内容未在原文中找到，不纳入必保保留率。`,
     all: "全部",
     emptyTitle: "还没有可核对的事实",
     emptyBody: "请在左右两侧粘贴文本，或载入示例查看效果。",
@@ -68,6 +77,8 @@ const copy = {
     possibleChange: "可能改成了",
     missingNote: "改写稿中未找到对应事实",
     invalidNote: "日期格式可识别，但数值超出有效范围",
+    notInSourceNote: "原文中未找到，无法作为必须保留项核对",
+    notInSourceAddedNote: "原文中未找到；仅在改写稿出现，不算作已保留",
     addedNote: "只在改写稿中出现",
     sourceContext: "原文语境",
     revisionContext: "改写语境",
@@ -96,7 +107,9 @@ const copy = {
     loadExample: "Load example",
     clear: "Clear",
     compare: "Check the facts",
-    compareHint: "No model or API key. Every result is explainable.",
+    compareHint: "Creates a fixed result. Recheck after editing either text.",
+    resultsOutdated:
+      "The inputs changed. These are still the previous results; recheck before exporting.",
     resultTitle: "Fact check",
     resultIntro: "Review flagged items before accepting the rewrite.",
     copyReport: "Copy report",
@@ -104,11 +117,19 @@ const copy = {
     copied: "Report copied",
     copyFailed: "Copy failed. Please download the report instead.",
     downloaded: "Report downloaded",
-    scanned: "Items checked",
+    scanned: "Automatic facts",
     preserved: "Preserved",
     review: "Review",
     added: "New in rewrite",
-    score: "Retention",
+    score: "Auto retention",
+    requiredResults: "Must-preserve checks",
+    requiredConfigured: "Configured",
+    requiredCheckable: "Checkable",
+    requiredMissing: "Missing in rewrite",
+    requiredNotInSource: "Not in source",
+    requiredRetention: "Required retention",
+    requiredInputWarning: (count: number) =>
+      `${count} item${count === 1 ? "" : "s"} not found in the source and excluded from required retention.`,
     all: "All",
     emptyTitle: "No comparable facts yet",
     emptyBody: "Paste text into both fields, or load the example to see it work.",
@@ -116,6 +137,9 @@ const copy = {
     possibleChange: "Possibly changed to",
     missingNote: "No corresponding fact found in the rewrite",
     invalidNote: "Date-like value found, but it is outside the valid calendar range",
+    notInSourceNote: "Not found in the source, so it cannot be checked",
+    notInSourceAddedNote:
+      "Not found in the source; appearing only in the rewrite is not preservation",
     addedNote: "Appears only in the rewrite",
     sourceContext: "Source context",
     revisionContext: "Rewrite context",
@@ -169,17 +193,26 @@ function ResultCard({
   const t = copy[locale];
   const compared = fact as ComparedFact;
   const status = added ? "added" : compared.status;
-  const contextLabel = added ? t.revisionContext : t.sourceContext;
+  const notInSource = compared.reviewReason === "not-in-source";
+  const contextLabel =
+    added || (notInSource && compared.matched)
+      ? t.revisionContext
+      : t.sourceContext;
   const statusText =
     status === "preserved"
       ? t.preservedNote
-        : status === "added"
-          ? t.addedNote
-          : compared.reviewReason === "invalid"
-            ? t.invalidNote
+      : status === "added"
+        ? t.addedNote
+        : compared.reviewReason === "invalid"
+          ? t.invalidNote
+          : notInSource
+            ? compared.matched
+              ? t.notInSourceAddedNote
+              : t.notInSourceNote
             : compared.possibleMatch
               ? t.possibleChange
               : t.missingNote;
+  const context = notInSource ? compared.matched?.context : fact.context;
 
   return (
     <article className={`result-card result-${status}`}>
@@ -206,16 +239,18 @@ function ResultCard({
           </div>
         </div>
         <p className="status-note">{statusText}</p>
-        <details className="context-details">
-          <summary>{contextLabel}</summary>
-          <p>{fact.context}</p>
-          {status === "review" && compared.possibleMatch ? (
-            <>
-              <strong>{t.revisionContext}</strong>
-              <p>{compared.possibleMatch.context}</p>
-            </>
-          ) : null}
-        </details>
+        {context ? (
+          <details className="context-details">
+            <summary>{contextLabel}</summary>
+            <p>{context}</p>
+            {status === "review" && compared.possibleMatch ? (
+              <>
+                <strong>{t.revisionContext}</strong>
+                <p>{compared.possibleMatch.context}</p>
+              </>
+            ) : null}
+          </details>
+        ) : null}
       </div>
     </article>
   );
@@ -226,28 +261,69 @@ export default function Home() {
   const [source, setSource] = useState(examples.zh.source);
   const [revision, setRevision] = useState(examples.zh.revision);
   const [required, setRequired] = useState(examples.zh.required);
+  const [checkedInput, setCheckedInput] = useState({
+    source: examples.zh.source,
+    revision: examples.zh.revision,
+    required: examples.zh.required,
+  });
   const [hasRun, setHasRun] = useState(true);
   const [filter, setFilter] = useState<Filter>("review");
   const [reportFeedback, setReportFeedback] = useState("");
+  const reportFeedbackTimer = useRef<number | undefined>(undefined);
   const t = copy[locale];
 
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
   }, [locale]);
 
+  useEffect(
+    () => () => {
+      if (reportFeedbackTimer.current !== undefined) {
+        window.clearTimeout(reportFeedbackTimer.current);
+      }
+    },
+    [],
+  );
+
   const comparison = useMemo(
+    () =>
+      compareFacts(
+        checkedInput.source,
+        checkedInput.revision,
+        checkedInput.required,
+      ),
+    [checkedInput],
+  );
+  const draftComparison = useMemo(
     () => compareFacts(source, revision, required),
     [source, revision, required],
   );
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
-    : 0;
+    : null;
+  const requiredRetention = comparison.requiredCheckableCount
+    ? Math.round(
+        (comparison.requiredPreservedCount /
+          comparison.requiredCheckableCount) *
+          100,
+      )
+    : null;
+  const retentionLabel = retention === null ? "—" : `${retention}%`;
+  const requiredRetentionLabel =
+    requiredRetention === null ? "—" : `${requiredRetention}%`;
+  const resultsOutdated =
+    hasRun &&
+    (source !== checkedInput.source ||
+      revision !== checkedInput.revision ||
+      required !== checkedInput.required);
 
   const loadExample = () => {
-    setSource(examples[locale].source);
-    setRevision(examples[locale].revision);
-    setRequired(examples[locale].required);
+    const example = examples[locale];
+    setSource(example.source);
+    setRevision(example.revision);
+    setRequired(example.required);
+    setCheckedInput(example);
     setHasRun(true);
     setFilter("review");
   };
@@ -256,13 +332,15 @@ export default function Home() {
     setSource("");
     setRevision("");
     setRequired("");
+    setCheckedInput({ source: "", revision: "", required: "" });
     setHasRun(false);
     setFilter("all");
   };
 
   const runComparison = () => {
+    setCheckedInput({ source, revision, required });
     setHasRun(true);
-    setFilter(comparison.reviewCount ? "review" : "all");
+    setFilter(draftComparison.reviewCount ? "review" : "all");
     window.requestAnimationFrame(() => {
       document
         .getElementById("results")
@@ -271,8 +349,14 @@ export default function Home() {
   };
 
   const showReportFeedback = (message: string) => {
+    if (reportFeedbackTimer.current !== undefined) {
+      window.clearTimeout(reportFeedbackTimer.current);
+    }
     setReportFeedback(message);
-    window.setTimeout(() => setReportFeedback(""), 2400);
+    reportFeedbackTimer.current = window.setTimeout(() => {
+      setReportFeedback("");
+      reportFeedbackTimer.current = undefined;
+    }, 2400);
   };
 
   const reportMarkdown = () => buildMarkdownReport(comparison, locale);
@@ -293,7 +377,7 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `keepfacts-report-${new Date().toISOString().slice(0, 10)}.md`;
+    link.download = `keepfacts-report-${formatLocalDate(new Date())}.md`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -448,6 +532,13 @@ export default function Home() {
             placeholder={t.requiredPlaceholder}
             spellCheck="false"
           />
+          <p className="required-input-feedback" role="status" aria-live="polite">
+            {draftComparison.requiredNotInSourceCount
+              ? t.requiredInputWarning(
+                  draftComparison.requiredNotInSourceCount,
+                )
+              : ""}
+          </p>
         </details>
       </section>
 
@@ -461,22 +552,39 @@ export default function Home() {
             </div>
             <div className="result-tools">
               <div className="report-actions" aria-label={t.resultTitle}>
-                <button type="button" onClick={copyReport}>
+                <button
+                  type="button"
+                  onClick={copyReport}
+                  disabled={resultsOutdated}
+                >
                   {t.copyReport}
                 </button>
-                <button type="button" onClick={downloadReport}>
+                <button
+                  type="button"
+                  onClick={downloadReport}
+                  disabled={resultsOutdated}
+                >
                   {t.downloadReport}
                 </button>
               </div>
               <span className="report-feedback" role="status" aria-live="polite">
                 {reportFeedback}
               </span>
-              <div className="score-ring" aria-label={`${t.score} ${retention}%`}>
-                <span>{retention}%</span>
+              <div
+                className="score-ring"
+                aria-label={`${t.score} ${retentionLabel}`}
+              >
+                <span>{retentionLabel}</span>
                 <small>{t.score}</small>
               </div>
             </div>
           </div>
+
+          {resultsOutdated ? (
+            <div className="stale-notice" role="status">
+              {t.resultsOutdated}
+            </div>
+          ) : null}
 
           <div className="summary-grid">
             <div className="summary-card summary-neutral">
@@ -496,6 +604,51 @@ export default function Home() {
               <strong>{comparison.addedCount}</strong>
             </div>
           </div>
+
+          {comparison.requiredCount ? (
+            <section className="required-results" aria-label={t.requiredResults}>
+              <div className="required-results-heading">
+                <div>
+                  <p className="eyebrow">{t.requiredResults}</p>
+                  <h3>{t.requiredResults}</h3>
+                </div>
+                <div
+                  className="required-score"
+                  aria-label={`${t.requiredRetention} ${requiredRetentionLabel}`}
+                >
+                  <strong>{requiredRetentionLabel}</strong>
+                  <span>{t.requiredRetention}</span>
+                </div>
+              </div>
+              <div className="required-summary-grid">
+                <div className="summary-card summary-neutral">
+                  <span>{t.requiredConfigured}</span>
+                  <strong>{comparison.requiredCount}</strong>
+                </div>
+                <div className="summary-card summary-neutral">
+                  <span>{t.requiredCheckable}</span>
+                  <strong>{comparison.requiredCheckableCount}</strong>
+                </div>
+                <div className="summary-card summary-success">
+                  <span>{t.preserved}</span>
+                  <strong>{comparison.requiredPreservedCount}</strong>
+                </div>
+                <div className="summary-card summary-warning">
+                  <span>{t.requiredMissing}</span>
+                  <strong>{comparison.requiredMissingCount}</strong>
+                </div>
+                <div className="summary-card summary-invalid">
+                  <span>{t.requiredNotInSource}</span>
+                  <strong>{comparison.requiredNotInSourceCount}</strong>
+                </div>
+              </div>
+              <div className="required-result-list">
+                {comparison.requiredFacts.map((fact) => (
+                  <ResultCard key={fact.id} fact={fact} locale={locale} />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="filter-tabs" role="tablist" aria-label={t.resultTitle}>
             {filters.map((item) => (

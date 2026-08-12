@@ -2,11 +2,25 @@
 
 [简体中文](README.zh-CN.md) · [Live demo](https://masakinakao.github.io/keepfacts/)
 
+[![Live demo](https://img.shields.io/badge/live-demo-0f5d46)](https://masakinakao.github.io/keepfacts/)
+[![CI](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml/badge.svg)](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/MasakiNakao/keepfacts)](https://github.com/MasakiNakao/keepfacts/releases/latest)
+[![License](https://img.shields.io/github/license/MasakiNakao/keepfacts)](LICENSE)
+
 **Change the wording, not the facts.**
 
 KeepFacts is a small, privacy-first checker for facts that disappear or change during AI rewriting, summarization, and translation. Paste the source and the rewrite, then review dates, money, percentages, quantities, versions, links, emails, and other exact facts side by side.
 
 All analysis runs locally in the browser. No text is uploaded, no account is required, and no AI API key is needed.
+
+[![KeepFacts interface showing a source-to-rewrite fact comparison](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
+
+## Try it in 30 seconds
+
+1. Open the [live demo](https://masakinakao.github.io/keepfacts/).
+2. Paste the original text on the left and the rewrite on the right.
+3. Optionally add one must-preserve name or phrase per line.
+4. Select **Check the facts**, review yellow items, then copy or download the Markdown report.
 
 ## Why KeepFacts?
 
@@ -29,6 +43,8 @@ It is intentionally narrow:
 - Quoted text and standalone numbers
 - Duplicate facts using occurrence-aware matching
 - Chinese and English formatting equivalence for common facts
+- User-defined names, terms, and phrases that must be preserved
+- Copyable and downloadable Markdown review reports
 
 ## Run locally
 
@@ -66,8 +82,6 @@ No model is used in this process. The result is fast and reproducible, but delib
 
 ## Roadmap
 
-- User-defined facts that must be preserved
-- Downloadable review reports
 - A reusable core package and CLI
 - More locales, currencies, and unit aliases
 - Browser extension and editor integrations

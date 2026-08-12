@@ -2,11 +2,25 @@
 
 [English](README.md) · [在线体验](https://masakinakao.github.io/keepfacts/)
 
+[![在线体验](https://img.shields.io/badge/在线体验-打开-0f5d46)](https://masakinakao.github.io/keepfacts/)
+[![CI](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml/badge.svg)](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/MasakiNakao/keepfacts)](https://github.com/MasakiNakao/keepfacts/releases/latest)
+[![License](https://img.shields.io/github/license/MasakiNakao/keepfacts)](LICENSE)
+
 **措辞可以改变，事实不该走样。**
 
 KeepFacts 是一个小巧、隐私优先的 AI 文本事实核对器。把原文和 AI 改写、总结或翻译后的文本分别粘贴进去，它会检查日期、金额、百分比、数量、版本、链接和邮箱等硬事实是否被保留、修改、遗漏或新增。
 
 所有分析都在浏览器本地完成，不上传文本，不需要账号，也不需要 AI API Key。
+
+[![KeepFacts 原文与改写稿事实核对界面](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
+
+## 30 秒体验
+
+1. 打开[在线体验](https://masakinakao.github.io/keepfacts/)。
+2. 左侧粘贴原文，右侧粘贴 AI 改写、总结或翻译后的文本。
+3. 如有需要，每行填写一个“必须保留”的名称、术语或关键短语。
+4. 点击“开始核对”，先检查黄色项目，再复制或下载 Markdown 报告。
 
 ## 当前能力
 
@@ -18,6 +32,8 @@ KeepFacts 是一个小巧、隐私优先的 AI 文本事实核对器。把原文
 - 引语和独立数字
 - 按出现次数核对重复事实
 - 常见中英文格式等价识别
+- 用户自定义必须保留的名称、术语和关键短语
+- 复制或下载 Markdown 核对报告
 
 KeepFacts 只检查能够精确提取的硬事实，不判断整段文字的语义是否正确。所有黄色项目都需要人工确认。
 
@@ -42,8 +58,6 @@ npm test
 
 ## 后续方向
 
-- 允许用户指定“必须保留的事实”
-- 下载核对报告
 - 提供独立核心包和 CLI
 - 增加更多语言、币种和单位
 - 浏览器扩展与编辑器集成

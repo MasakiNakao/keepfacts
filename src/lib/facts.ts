@@ -1,4 +1,5 @@
 export type FactKind =
+  | "required"
   | "money"
   | "percentage"
   | "date"
@@ -477,7 +478,82 @@ function contextSimilarity(left: Fact, right: Fact) {
   return (2 * overlapCount) / (leftPairs.size + rightPairs.size);
 }
 
-export function compareFacts(source: string, revision: string): FactComparison {
+function normalizeRequired(value: string) {
+  return toAscii(value).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function includesRequired(revision: string, required: string) {
+  let start = revision.indexOf(required);
+  while (start !== -1) {
+    const before = revision[start - 1] ?? "";
+    const after = revision[start + required.length] ?? "";
+    const requiresLeftBoundary = /^[a-z0-9]/i.test(required);
+    const requiresRightBoundary = /[a-z0-9]$/i.test(required);
+    const leftMatches =
+      !requiresLeftBoundary || !/[a-z0-9]/i.test(before);
+    const rightMatches =
+      !requiresRightBoundary || !/[a-z0-9]/i.test(after);
+
+    if (leftMatches && rightMatches) return true;
+    start = revision.indexOf(required, start + 1);
+  }
+
+  return false;
+}
+
+function compareRequiredFacts(required: string, revision: string): ComparedFact[] {
+  const normalizedRevision = normalizeRequired(revision);
+  const seen = new Set<string>();
+
+  return required
+    .split(/\r?\n/u)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((raw) => {
+      const normalized = normalizeRequired(raw);
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    })
+    .map((raw, index) => {
+      const normalized = normalizeRequired(raw);
+      const preserved = includesRequired(normalizedRevision, normalized);
+      const base: Fact = {
+        id: `required-${index}-${normalized}`,
+        kind: "required",
+        raw,
+        normalized,
+        valid: true,
+        start: 0,
+        end: raw.length,
+        context: raw,
+      };
+
+      if (!preserved) {
+        return {
+          ...base,
+          status: "review",
+          reviewReason: "missing",
+        };
+      }
+
+      return {
+        ...base,
+        status: "preserved",
+        matched: {
+          ...base,
+          id: `required-match-${index}-${normalized}`,
+          context: revision.replace(/\s+/g, " ").trim().slice(0, 120),
+        },
+      };
+    });
+}
+
+export function compareFacts(
+  source: string,
+  revision: string,
+  required = "",
+): FactComparison {
   const sourceFacts = extractFacts(source);
   const revisionFacts = extractFacts(revision);
   const matchedRevisionIds = new Set<string>();
@@ -543,13 +619,15 @@ export function compareFacts(source: string, revision: string): FactComparison {
   const addedFacts = revisionFacts.filter(
     (fact) => !matchedRevisionIds.has(fact.id),
   );
-  const preservedCount = compared.filter(
+  const requiredFacts = compareRequiredFacts(required, revision);
+  const allCompared = [...requiredFacts, ...compared];
+  const preservedCount = allCompared.filter(
     (fact) => fact.status === "preserved",
   ).length;
-  const reviewCount = compared.length - preservedCount;
+  const reviewCount = allCompared.length - preservedCount;
 
   return {
-    sourceFacts: compared,
+    sourceFacts: allCompared,
     addedFacts,
     preservedCount,
     reviewCount,

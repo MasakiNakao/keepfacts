@@ -5,6 +5,7 @@ import {
   type Fact,
   type FactKind,
 } from "./lib/facts";
+import { buildMarkdownReport } from "./lib/report";
 
 type Locale = "zh" | "en";
 type Filter = "all" | "review" | "preserved" | "added";
@@ -15,12 +16,14 @@ const examples = {
       "星河工作室将在2026年9月15日发布 v1.2.0。首批预算为 ¥30,000，计划邀请100名测试用户，目标转化率为12.5%。问题请发送至 hello@example.com，项目说明见 https://example.com/launch。",
     revision:
       "星河工作室计划在2026年9月18日发布 v1.2.0。首批预算为3万元，计划邀请80名测试用户，目标转化率为12.5%。如有问题，请发送邮件至 hello@example.com。",
+    required: "星河工作室",
   },
   en: {
     source:
       "Northstar Studio will release v1.2.0 on September 15, 2026. The initial budget is $30,000, with 100 test users and a 12.5% conversion target. Contact hello@example.com or visit https://example.com/launch.",
     revision:
       "Northstar Studio plans to release v1.2.0 on September 18, 2026. The initial budget is $30,000, with 80 test users and a 12.5% conversion target. Questions can be sent to hello@example.com.",
+    required: "Northstar Studio",
   },
 };
 
@@ -36,6 +39,9 @@ const copy = {
     sourceHint: "需要保留事实的文本",
     revision: "改写稿",
     revisionHint: "AI 改写、总结或翻译后的文本",
+    required: "必须保留的内容",
+    requiredHint: "可选：每行填写一个名称、术语或关键短语",
+    requiredPlaceholder: "例如：品牌全称\n例如：不得更改的术语",
     chars: "字符",
     placeholderSource: "在这里粘贴原文……",
     placeholderRevision: "在这里粘贴改写稿……",
@@ -45,7 +51,12 @@ const copy = {
     compareHint: "无需模型或 API Key，结果可解释",
     resultTitle: "核对结果",
     resultIntro: "先看需要人工确认的项目，再决定是否接受这次改写。",
-    scanned: "原文硬事实",
+    copyReport: "复制报告",
+    downloadReport: "下载 Markdown",
+    copied: "报告已复制",
+    copyFailed: "复制失败，请使用下载功能",
+    downloaded: "报告已下载",
+    scanned: "核对项目",
     preserved: "已保留",
     review: "需确认",
     added: "改写新增",
@@ -62,7 +73,7 @@ const copy = {
     revisionContext: "改写语境",
     disclaimer:
       "KeepFacts 当前只检查可精确比对的硬事实，不判断整段文字的语义是否正确。黄色项目需要你人工确认。",
-    footer: "实验版 v0.1.1 · 确定性规则 · 无追踪代码",
+    footer: "实验版 v0.1.2 · 确定性规则 · 无追踪代码",
     changeLanguage: "English",
   },
   en: {
@@ -76,6 +87,9 @@ const copy = {
     sourceHint: "The text whose facts must survive",
     revision: "Rewrite",
     revisionHint: "AI rewrite, summary, or translation",
+    required: "Must-preserve content",
+    requiredHint: "Optional: one name, term, or key phrase per line",
+    requiredPlaceholder: "Example: Full brand name\nExample: Required terminology",
     chars: "characters",
     placeholderSource: "Paste the source text here…",
     placeholderRevision: "Paste the rewritten text here…",
@@ -85,7 +99,12 @@ const copy = {
     compareHint: "No model or API key. Every result is explainable.",
     resultTitle: "Fact check",
     resultIntro: "Review flagged items before accepting the rewrite.",
-    scanned: "Source facts",
+    copyReport: "Copy report",
+    downloadReport: "Download Markdown",
+    copied: "Report copied",
+    copyFailed: "Copy failed. Please download the report instead.",
+    downloaded: "Report downloaded",
+    scanned: "Items checked",
     preserved: "Preserved",
     review: "Review",
     added: "New in rewrite",
@@ -102,13 +121,14 @@ const copy = {
     revisionContext: "Rewrite context",
     disclaimer:
       "KeepFacts currently checks exact, extractable facts only. It does not judge whether the full meaning is correct. Yellow items need human review.",
-    footer: "Experimental v0.1.1 · Deterministic rules · No tracking",
+    footer: "Experimental v0.1.2 · Deterministic rules · No tracking",
     changeLanguage: "中文",
   },
 };
 
 const kindLabels: Record<Locale, Record<FactKind, string>> = {
   zh: {
+    required: "必须保留",
     money: "金额",
     percentage: "百分比",
     date: "日期",
@@ -122,6 +142,7 @@ const kindLabels: Record<Locale, Record<FactKind, string>> = {
     number: "数字",
   },
   en: {
+    required: "Required",
     money: "Money",
     percentage: "Percentage",
     date: "Date",
@@ -204,8 +225,10 @@ export default function Home() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [source, setSource] = useState(examples.zh.source);
   const [revision, setRevision] = useState(examples.zh.revision);
+  const [required, setRequired] = useState(examples.zh.required);
   const [hasRun, setHasRun] = useState(true);
   const [filter, setFilter] = useState<Filter>("review");
+  const [reportFeedback, setReportFeedback] = useState("");
   const t = copy[locale];
 
   useEffect(() => {
@@ -213,8 +236,8 @@ export default function Home() {
   }, [locale]);
 
   const comparison = useMemo(
-    () => compareFacts(source, revision),
-    [source, revision],
+    () => compareFacts(source, revision, required),
+    [source, revision, required],
   );
   const total = comparison.sourceFacts.length;
   const retention = total
@@ -224,6 +247,7 @@ export default function Home() {
   const loadExample = () => {
     setSource(examples[locale].source);
     setRevision(examples[locale].revision);
+    setRequired(examples[locale].required);
     setHasRun(true);
     setFilter("review");
   };
@@ -231,6 +255,7 @@ export default function Home() {
   const clearAll = () => {
     setSource("");
     setRevision("");
+    setRequired("");
     setHasRun(false);
     setFilter("all");
   };
@@ -243,6 +268,37 @@ export default function Home() {
         .getElementById("results")
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  const showReportFeedback = (message: string) => {
+    setReportFeedback(message);
+    window.setTimeout(() => setReportFeedback(""), 2400);
+  };
+
+  const reportMarkdown = () => buildMarkdownReport(comparison, locale);
+
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(reportMarkdown());
+      showReportFeedback(t.copied);
+    } catch {
+      showReportFeedback(t.copyFailed);
+    }
+  };
+
+  const downloadReport = () => {
+    const blob = new Blob([reportMarkdown()], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `keepfacts-report-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    showReportFeedback(t.downloaded);
   };
 
   const visibleSourceFacts = comparison.sourceFacts.filter((fact) => {
@@ -285,7 +341,7 @@ export default function Home() {
             K
           </span>
           <span>KeepFacts</span>
-          <span className="version-tag">v0.1.1</span>
+          <span className="version-tag">v0.1.2</span>
         </a>
         <div className="header-actions">
           <span className="privacy-badge">
@@ -379,6 +435,20 @@ export default function Home() {
             <span>{t.compareHint}</span>
           </div>
         </div>
+
+        <details className="required-panel">
+          <summary>
+            <span>{t.required}</span>
+            <small>{t.requiredHint}</small>
+          </summary>
+          <textarea
+            aria-label={t.required}
+            value={required}
+            onChange={(event) => setRequired(event.target.value)}
+            placeholder={t.requiredPlaceholder}
+            spellCheck="false"
+          />
+        </details>
       </section>
 
       {hasRun ? (
@@ -389,9 +459,22 @@ export default function Home() {
               <h2>{t.resultTitle}</h2>
               <p>{t.resultIntro}</p>
             </div>
-            <div className="score-ring" aria-label={`${t.score} ${retention}%`}>
-              <span>{retention}%</span>
-              <small>{t.score}</small>
+            <div className="result-tools">
+              <div className="report-actions" aria-label={t.resultTitle}>
+                <button type="button" onClick={copyReport}>
+                  {t.copyReport}
+                </button>
+                <button type="button" onClick={downloadReport}>
+                  {t.downloadReport}
+                </button>
+              </div>
+              <span className="report-feedback" role="status" aria-live="polite">
+                {reportFeedback}
+              </span>
+              <div className="score-ring" aria-label={`${t.score} ${retention}%`}>
+                <span>{retention}%</span>
+                <small>{t.score}</small>
+              </div>
             </div>
           </div>
 

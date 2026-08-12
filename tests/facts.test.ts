@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { compareFacts, extractFacts } from "../src/lib/facts.ts";
+import { buildMarkdownReport } from "../src/lib/report.ts";
 
 interface ValidationCase {
   id: string;
@@ -130,6 +131,68 @@ test("flags impossible calendar dates for review", () => {
   assert.equal(comparison.preservedCount, 0);
   assert.equal(comparison.reviewCount, 1);
   assert.equal(comparison.sourceFacts[0]?.reviewReason, "invalid");
+});
+
+test("checks user-defined must-preserve content line by line", () => {
+  const comparison = compareFacts(
+    "Acme launches Project Atlas.",
+    "ACME launches a renamed project.",
+    "Acme\nProject Atlas",
+  );
+
+  const requiredFacts = comparison.sourceFacts.filter(
+    (fact) => fact.kind === "required",
+  );
+  assert.equal(requiredFacts.length, 2);
+  assert.equal(requiredFacts[0]?.status, "preserved");
+  assert.equal(requiredFacts[1]?.status, "review");
+  assert.equal(requiredFacts[1]?.reviewReason, "missing");
+});
+
+test("deduplicates required content and avoids partial English-word matches", () => {
+  const comparison = compareFacts(
+    "Keep AI and Acme unchanged.",
+    "The text said Acmeology instead.",
+    "AI\nAI\nAcme",
+  );
+  const requiredFacts = comparison.sourceFacts.filter(
+    (fact) => fact.kind === "required",
+  );
+
+  assert.equal(requiredFacts.length, 2);
+  assert.equal(requiredFacts[0]?.status, "review");
+  assert.equal(requiredFacts[1]?.status, "review");
+});
+
+test("builds a deterministic bilingual Markdown report", () => {
+  const comparison = compareFacts(
+    "预算为¥30,000，日期为2026-09-15。",
+    "预算为3万元，日期为2026-09-18。",
+    "预算",
+  );
+  const report = buildMarkdownReport(
+    comparison,
+    "zh",
+    new Date("2026-08-11T00:00:00.000Z"),
+  );
+
+  assert.match(report, /# KeepFacts 核对报告/);
+  assert.match(report, /生成日期: 2026-08-11/);
+  assert.match(report, /\| 已保留 \| 2 \|/);
+  assert.match(report, /\| 需确认 \| 1 \|/);
+  assert.match(report, /2026-09-15/);
+  assert.match(report, /2026-09-18/);
+});
+
+test("preserves backticks in Markdown report values", () => {
+  const comparison = compareFacts("Use `v1`.", "Use `v2`.", "`v1`");
+  const report = buildMarkdownReport(
+    comparison,
+    "en",
+    new Date("2026-08-11T00:00:00.000Z"),
+  );
+
+  assert.match(report, /`` `v1` ``/);
 });
 
 test("passes the public validation corpus", () => {

@@ -2,6 +2,20 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.1.2] - 2026-08-11
+
+### Added
+
+- Optional must-preserve names, terms, and key phrases, entered one per line.
+- Copyable and downloadable Markdown reports for completed comparisons.
+- Product screenshot, project badges, and a 30-second walkthrough in both READMEs.
+- Tests for custom required content and deterministic report generation.
+
+### Changed
+
+- Result totals and retention now include user-defined must-preserve content.
+- Refreshed responsive result controls for desktop and mobile layouts.
+
 ## [0.1.1] - 2026-08-08
 
 ### Added

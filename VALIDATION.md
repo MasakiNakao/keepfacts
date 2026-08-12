@@ -18,7 +18,7 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.1.6 snapshot
+## v0.1.7 snapshot
 
 - 37 public validation cases
 - 38 automated unit tests plus Chromium browser and accessibility checks

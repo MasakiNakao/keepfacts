@@ -2,6 +2,15 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.1.7] - 2026-08-12
+
+### Fixed
+
+- Run release deployment from `main` to satisfy the repository's existing
+  GitHub Pages environment policy.
+- Require the matching version tag to point to the exact deployed commit,
+  preserving tag-bound releases without changing repository settings.
+
 ## [0.1.6] - 2026-08-12
 
 ### Fixed

@@ -7,6 +7,13 @@ import {
   type FactKind,
 } from "./lib/facts";
 import { buildMarkdownReport, formatLocalDate } from "./lib/report";
+import {
+  reviewDecisionKey,
+  summarizeReviews,
+  type ReviewDecision,
+  type ReviewDecisions,
+  type ReviewScope,
+} from "./lib/review";
 import { APP_COMMIT_SHA, APP_VERSION } from "./version";
 import type {
   CompareInput,
@@ -15,7 +22,8 @@ import type {
 } from "./workers/compare.protocol";
 
 type Locale = "zh" | "en";
-type Filter = "all" | "review" | "preserved" | "added";
+type Filter = "all" | "actionable" | "review" | "preserved" | "added";
+const RESULT_PAGE_SIZE = 50;
 
 const examples = {
   zh: {
@@ -71,6 +79,7 @@ const copy = {
     scanned: "自动事实",
     preserved: "已保留",
     review: "需确认",
+    reviewItems: "人工审阅",
     added: "改写新增",
     score: "自动保留率",
     requiredResults: "必须保留检查",
@@ -86,6 +95,20 @@ const copy = {
     automaticDetailsHint: "以下筛选只作用于自动提取的事实。",
     visibleItems: (label: string, count: number) =>
       `${label}筛选：当前显示 ${count} 项自动事实。`,
+    manualReview: "人工审阅进度",
+    manualReviewHint:
+      "人工结论不会改变自动统计，只保留在当前页面和本次导出的报告中。重新核对会重置。",
+    manualTotal: "待审阅项目",
+    manualPending: "待处理",
+    manualConfirmed: "确认需处理",
+    manualAccepted: "改写合理",
+    manualIgnored: "已忽略",
+    manualDecision: "人工结论",
+    manualDecisionGroup: "选择人工结论",
+    previousPage: "上一页",
+    nextPage: "下一页",
+    pageStatus: (page: number, pages: number, total: number) =>
+      `第 ${page}/${pages} 页，共 ${total} 项`,
     emptyTitle: "还没有可核对的事实",
     emptyBody: "请在左右两侧粘贴文本，或载入示例查看效果。",
     preservedNote: "改写稿中找到等价事实",
@@ -144,6 +167,7 @@ const copy = {
     scanned: "Automatic facts",
     preserved: "Preserved",
     review: "Review",
+    reviewItems: "Human review",
     added: "New in rewrite",
     score: "Auto retention",
     requiredResults: "Must-preserve checks",
@@ -159,6 +183,20 @@ const copy = {
     automaticDetailsHint: "These filters apply only to automatically extracted facts.",
     visibleItems: (label: string, count: number) =>
       `${label} filter: showing ${count} automatic fact${count === 1 ? "" : "s"}.`,
+    manualReview: "Human review progress",
+    manualReviewHint:
+      "Human decisions do not change automatic metrics. They remain only on this page and in this exported report, and reset after a new check.",
+    manualTotal: "Reviewable items",
+    manualPending: "Pending",
+    manualConfirmed: "Confirmed issue",
+    manualAccepted: "Acceptable rewrite",
+    manualIgnored: "Ignored",
+    manualDecision: "Human decision",
+    manualDecisionGroup: "Choose a human decision",
+    previousPage: "Previous",
+    nextPage: "Next",
+    pageStatus: (page: number, pages: number, total: number) =>
+      `Page ${page} of ${pages}, ${total} items`,
     emptyTitle: "No comparable facts yet",
     emptyBody: "Paste text into both fields, or load the example to see it work.",
     preservedNote: "Equivalent fact found in the rewrite",
@@ -217,10 +255,18 @@ function ResultCard({
   fact,
   locale,
   added = false,
+  reviewScope,
+  decision,
+  onDecisionChange,
+  reviewDisabled = false,
 }: {
   fact: Fact | ComparedFact;
   locale: Locale;
   added?: boolean;
+  reviewScope?: ReviewScope;
+  decision?: ReviewDecision;
+  onDecisionChange?: (decision?: ReviewDecision) => void;
+  reviewDisabled?: boolean;
 }) {
   const t = copy[locale];
   const compared = fact as ComparedFact;
@@ -233,7 +279,18 @@ function ResultCard({
     ? fact
     : compared.matched ?? compared.possibleMatch;
   const showRewriteValue =
-    rewriteFact !== undefined && rewriteFact.raw !== sourceFact?.raw;
+    !added && rewriteFact !== undefined && rewriteFact.raw !== sourceFact?.raw;
+  const reviewable = added || status === "review";
+  const decisionOptions: Array<{
+    key: string;
+    value?: ReviewDecision;
+    label: string;
+  }> = [
+    { key: "pending", label: t.manualPending },
+    { key: "confirmed", value: "confirmed", label: t.manualConfirmed },
+    { key: "accepted", value: "accepted", label: t.manualAccepted },
+    { key: "ignored", value: "ignored", label: t.manualIgnored },
+  ];
   const statusText =
     status === "preserved"
       ? t.preservedNote
@@ -274,6 +331,43 @@ function ResultCard({
           </div>
         </div>
         <p className="status-note">{statusText}</p>
+        {reviewable && reviewScope && onDecisionChange ? (
+          <fieldset className="review-decision" disabled={reviewDisabled}>
+            <legend className="sr-only">
+              {`${t.manualDecisionGroup}: ${sourceFact?.raw ?? fact.raw}`}
+            </legend>
+            <div className="review-decision-heading">
+              <span>{t.manualDecision}</span>
+              <strong>
+                {decision
+                  ? decisionOptions.find((option) => option.value === decision)
+                      ?.label
+                  : t.manualPending}
+              </strong>
+            </div>
+            <div className="review-decision-buttons">
+              {decisionOptions.map((option) => (
+                <label
+                  key={option.key}
+                  className={
+                    decision === option.value
+                      ? "review-decision-option selected"
+                      : "review-decision-option"
+                  }
+                >
+                  <input
+                    type="radio"
+                    name={reviewDecisionKey(reviewScope, fact)}
+                    value={option.key}
+                    checked={decision === option.value}
+                    onChange={() => onDecisionChange(option.value)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
         {sourceFact?.context || rewriteFact?.context ? (
           <details className="context-details">
             <summary>{t.comparisonContext}</summary>
@@ -310,13 +404,22 @@ export default function Home() {
     compareFacts(examples.zh.source, examples.zh.revision, examples.zh.required),
   );
   const [hasRun, setHasRun] = useState(true);
-  const [filter, setFilter] = useState<Filter>("review");
+  const [filter, setFilter] = useState<Filter>("actionable");
+  const [reviewDecisions, setReviewDecisions] = useState<ReviewDecisions>({});
+  const [resultPage, setResultPage] = useState(1);
+  const [requiredPage, setRequiredPage] = useState(1);
   const [reportFeedback, setReportFeedback] = useState("");
   const [comparisonFeedback, setComparisonFeedback] = useState("");
   const [comparisonError, setComparisonError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [focusResultsAfterRun, setFocusResultsAfterRun] = useState(false);
+  const [requiredNotInSourceCount, setRequiredNotInSourceCount] = useState(() =>
+    countRequiredNotInSource(examples.zh.source, examples.zh.required),
+  );
   const reportFeedbackTimer = useRef<number | undefined>(undefined);
   const resultsHeading = useRef<HTMLHeadingElement | null>(null);
+  const automaticResultsHeading = useRef<HTMLHeadingElement | null>(null);
+  const requiredResultsHeading = useRef<HTMLHeadingElement | null>(null);
   const localeRef = useRef(locale);
   const workerRef = useRef<Worker | null>(null);
   const requestSequence = useRef(0);
@@ -341,7 +444,22 @@ export default function Home() {
     [],
   );
 
-  const requiredNotInSourceCount = countRequiredNotInSource(source, required);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setRequiredNotInSourceCount(countRequiredNotInSource(source, required));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [source, required]);
+
+  useEffect(() => {
+    if (!focusResultsAfterRun || !hasRun) return;
+    resultsHeading.current?.focus({ preventScroll: true });
+    document
+      .getElementById("results")
+      ?.scrollIntoView({ behavior: "auto", block: "start" });
+    setFocusResultsAfterRun(false);
+  }, [focusResultsAfterRun, hasRun]);
+
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
@@ -368,6 +486,7 @@ export default function Home() {
     workerRef.current = null;
     pendingRef.current = undefined;
     setBusy(false);
+    setFocusResultsAfterRun(false);
     setComparisonFeedback("");
   };
 
@@ -390,10 +509,14 @@ export default function Home() {
     setComparison(
       compareFacts(example.source, example.revision, example.required),
     );
+    setReviewDecisions({});
     setHasRun(true);
-    setFilter("review");
+    setFilter("actionable");
+    setResultPage(1);
+    setRequiredPage(1);
     setComparisonError("");
     setComparisonFeedback("");
+    setFocusResultsAfterRun(false);
   };
 
   const clearAll = () => {
@@ -403,8 +526,11 @@ export default function Home() {
     setRequired("");
     setCheckedInput({ source: "", revision: "", required: "" });
     setComparison(compareFacts("", "", ""));
+    setReviewDecisions({});
     setHasRun(false);
     setFilter("all");
+    setResultPage(1);
+    setRequiredPage(1);
     setComparisonError("");
     setComparisonFeedback("");
   };
@@ -452,9 +578,16 @@ export default function Home() {
       pendingRef.current = undefined;
       setBusy(false);
       setComparison(data.comparison);
+      setReviewDecisions({});
       setCheckedInput(input);
       setHasRun(true);
-      setFilter(data.comparison.reviewCount ? "review" : "all");
+      setFilter(
+        data.comparison.reviewCount || data.comparison.addedCount
+          ? "actionable"
+          : "all",
+      );
+      setResultPage(1);
+      setRequiredPage(1);
       setComparisonError("");
       const currentCopy = copy[localeRef.current];
       setComparisonFeedback(
@@ -463,15 +596,10 @@ export default function Home() {
           data.comparison.reviewCount,
           data.comparison.addedCount,
           data.comparison.requiredMissingCount +
-            data.comparison.requiredNotInSourceCount,
+          data.comparison.requiredNotInSourceCount,
         ),
       );
-      window.requestAnimationFrame(() => {
-        resultsHeading.current?.focus({ preventScroll: true });
-        document
-          .getElementById("results")
-          ?.scrollIntoView({ behavior: "auto", block: "start" });
-      });
+      setFocusResultsAfterRun(true);
     };
     worker.onerror = finishError;
     worker.onmessageerror = finishError;
@@ -503,8 +631,30 @@ export default function Home() {
     buildMarkdownReport(comparison, locale, {
       appVersion: APP_VERSION,
       commitSha: APP_COMMIT_SHA,
+      reviewDecisions,
     });
 
+  const setFactDecision = (
+    scope: ReviewScope,
+    fact: Fact,
+    decision?: ReviewDecision,
+  ) => {
+    const key = reviewDecisionKey(scope, fact);
+    setReviewDecisions((current) => {
+      if (decision) return { ...current, [key]: decision };
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const manualSummary = summarizeReviews(comparison, reviewDecisions);
+  const focusPageHeading = (heading: HTMLHeadingElement | null) => {
+    window.requestAnimationFrame(() => {
+      heading?.focus({ preventScroll: true });
+      heading?.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+  };
   const copyReport = async () => {
     try {
       await navigator.clipboard.writeText(reportMarkdown());
@@ -532,13 +682,42 @@ export default function Home() {
   const visibleSourceFacts = comparison.sourceFacts.filter((fact) => {
     if (filter === "all") return true;
     if (filter === "added") return false;
+    if (filter === "actionable") return fact.status === "review";
     return fact.status === filter;
   });
-  const showAdded = filter === "all" || filter === "added";
+  const visibleAddedFacts = comparison.addedFacts.filter((fact) => {
+    if (filter === "all" || filter === "added") return true;
+    if (filter === "actionable") return true;
+    return false;
+  });
   const visibleCount =
-    visibleSourceFacts.length + (showAdded ? comparison.addedFacts.length : 0);
+    visibleSourceFacts.length + visibleAddedFacts.length;
+  const visibleItems = [
+    ...visibleSourceFacts.map((fact) => ({ fact, added: false as const })),
+    ...visibleAddedFacts.map((fact) => ({ fact, added: true as const })),
+  ];
+  const totalPages = Math.max(1, Math.ceil(visibleItems.length / RESULT_PAGE_SIZE));
+  const currentPage = Math.min(resultPage, totalPages);
+  const pagedItems = visibleItems.slice(
+    (currentPage - 1) * RESULT_PAGE_SIZE,
+    currentPage * RESULT_PAGE_SIZE,
+  );
+  const requiredTotalPages = Math.max(
+    1,
+    Math.ceil(comparison.requiredFacts.length / RESULT_PAGE_SIZE),
+  );
+  const currentRequiredPage = Math.min(requiredPage, requiredTotalPages);
+  const pagedRequiredFacts = comparison.requiredFacts.slice(
+    (currentRequiredPage - 1) * RESULT_PAGE_SIZE,
+    currentRequiredPage * RESULT_PAGE_SIZE,
+  );
 
   const filters: Array<{ key: Filter; label: string; count: number }> = [
+    {
+      key: "actionable",
+      label: t.reviewItems,
+      count: comparison.reviewCount + comparison.addedCount,
+    },
     {
       key: "review",
       label: t.review,
@@ -757,12 +936,53 @@ export default function Home() {
             </div>
           </div>
 
+          {manualSummary.total ? (
+            <section
+              className="manual-review-summary"
+              aria-labelledby="manual-review-title"
+            >
+              <div className="manual-review-heading">
+                <div>
+                  <h3 id="manual-review-title">{t.manualReview}</h3>
+                  <p>{t.manualReviewHint}</p>
+                </div>
+                <strong aria-live="polite" aria-atomic="true">
+                  {manualSummary.total - manualSummary.pending}/{manualSummary.total}
+                </strong>
+              </div>
+              <div className="manual-summary-grid">
+                <div className="summary-card summary-neutral">
+                  <span>{t.manualTotal}</span>
+                  <strong>{manualSummary.total}</strong>
+                </div>
+                <div className="summary-card summary-warning">
+                  <span>{t.manualPending}</span>
+                  <strong>{manualSummary.pending}</strong>
+                </div>
+                <div className="summary-card summary-confirmed">
+                  <span>{t.manualConfirmed}</span>
+                  <strong>{manualSummary.confirmed}</strong>
+                </div>
+                <div className="summary-card summary-success">
+                  <span>{t.manualAccepted}</span>
+                  <strong>{manualSummary.accepted}</strong>
+                </div>
+                <div className="summary-card summary-ignored">
+                  <span>{t.manualIgnored}</span>
+                  <strong>{manualSummary.ignored}</strong>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {comparison.requiredCount ? (
             <section className="required-results" aria-label={t.requiredResults}>
               <div className="required-results-heading">
                 <div>
                   <p className="eyebrow">{t.requiredResults}</p>
-                  <h3>{t.requiredResults}</h3>
+                  <h3 ref={requiredResultsHeading} tabIndex={-1}>
+                    {t.requiredResults}
+                  </h3>
                 </div>
                 <div
                   className="required-score"
@@ -795,16 +1015,65 @@ export default function Home() {
                 </div>
               </div>
               <div className="required-result-list">
-                {comparison.requiredFacts.map((fact) => (
-                  <ResultCard key={fact.id} fact={fact} locale={locale} />
+                {pagedRequiredFacts.map((fact) => (
+                  <ResultCard
+                    key={fact.id}
+                    fact={fact}
+                    locale={locale}
+                    reviewScope={fact.status === "review" ? "required" : undefined}
+                    decision={reviewDecisions[reviewDecisionKey("required", fact)]}
+                    onDecisionChange={
+                      fact.status === "review"
+                        ? (decision) => setFactDecision("required", fact, decision)
+                        : undefined
+                    }
+                    reviewDisabled={busy || resultsOutdated}
+                  />
                 ))}
               </div>
+              {comparison.requiredFacts.length > RESULT_PAGE_SIZE ? (
+                <nav className="result-pagination" aria-label={t.requiredResults}>
+                  <button
+                    type="button"
+                    disabled={currentRequiredPage === 1}
+                    onClick={() => {
+                      setRequiredPage(currentRequiredPage - 1);
+                      focusPageHeading(requiredResultsHeading.current);
+                    }}
+                  >
+                    {t.previousPage}
+                  </button>
+                  <span aria-current="page" aria-live="polite">
+                    {t.pageStatus(
+                      currentRequiredPage,
+                      requiredTotalPages,
+                      comparison.requiredFacts.length,
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentRequiredPage === requiredTotalPages}
+                    onClick={() => {
+                      setRequiredPage(currentRequiredPage + 1);
+                      focusPageHeading(requiredResultsHeading.current);
+                    }}
+                  >
+                    {t.nextPage}
+                  </button>
+                </nav>
+              ) : null}
             </section>
           ) : null}
 
           <section className="automatic-results" aria-labelledby="automatic-details-title">
             <div className="automatic-results-heading">
-              <h3 id="automatic-details-title">{t.automaticDetails}</h3>
+              <h3
+                id="automatic-details-title"
+                ref={automaticResultsHeading}
+                tabIndex={-1}
+              >
+                {t.automaticDetails}
+              </h3>
               <p>{t.automaticDetailsHint}</p>
             </div>
             <div className="filter-tabs" role="group" aria-label={t.automaticDetails}>
@@ -816,6 +1085,7 @@ export default function Home() {
                   className={filter === item.key ? "active" : ""}
                   onClick={() => {
                     setFilter(item.key);
+                    setResultPage(1);
                     setComparisonFeedback(t.visibleItems(item.label, item.count));
                   }}
                 >
@@ -826,19 +1096,36 @@ export default function Home() {
             </div>
 
             <div className="result-list">
-            {visibleSourceFacts.map((fact) => (
-              <ResultCard key={fact.id} fact={fact} locale={locale} />
-            ))}
-            {showAdded
-              ? comparison.addedFacts.map((fact) => (
+            {pagedItems.map(({ fact, added }) =>
+              added ? (
                   <ResultCard
                     key={`added-${fact.id}`}
                     fact={fact}
                     locale={locale}
                     added
+                    reviewScope="added"
+                    decision={reviewDecisions[reviewDecisionKey("added", fact)]}
+                    onDecisionChange={(decision) =>
+                      setFactDecision("added", fact, decision)
+                    }
+                    reviewDisabled={busy || resultsOutdated}
                   />
-                ))
-              : null}
+                ) : (
+                  <ResultCard
+                    key={fact.id}
+                    fact={fact}
+                    locale={locale}
+                    reviewScope={fact.status === "review" ? "source" : undefined}
+                    decision={reviewDecisions[reviewDecisionKey("source", fact)]}
+                    onDecisionChange={
+                      fact.status === "review"
+                        ? (decision) => setFactDecision("source", fact, decision)
+                        : undefined
+                    }
+                    reviewDisabled={busy || resultsOutdated}
+                  />
+                ),
+            )}
             {visibleCount === 0 ? (
               <div className="empty-state">
                 <span aria-hidden="true">◎</span>
@@ -847,6 +1134,33 @@ export default function Home() {
               </div>
             ) : null}
             </div>
+            {visibleCount > RESULT_PAGE_SIZE ? (
+              <nav className="result-pagination" aria-label={t.automaticDetails}>
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => {
+                    setResultPage(currentPage - 1);
+                    focusPageHeading(automaticResultsHeading.current);
+                  }}
+                >
+                  {t.previousPage}
+                </button>
+                <span aria-current="page" aria-live="polite">
+                  {t.pageStatus(currentPage, totalPages, visibleCount)}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage === totalPages}
+                  onClick={() => {
+                    setResultPage(currentPage + 1);
+                    focusPageHeading(automaticResultsHeading.current);
+                  }}
+                >
+                  {t.nextPage}
+                </button>
+              </nav>
+            ) : null}
           </section>
 
           <aside className="disclaimer">

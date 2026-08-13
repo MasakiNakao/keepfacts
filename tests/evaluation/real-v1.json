@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "id": "real-v1",
+  "description": "Realistic fictional source-to-rewrite pairs with human-authored mention identities, UTF-16 spans, canonical values, and one-to-one semantic relations.",
+  "thresholds": {
+    "sourceExtraction": { "precision": 0.9, "recall": 0.9 },
+    "revisionExtraction": { "precision": 0.9, "recall": 0.9 },
+    "review": { "precision": 0.85, "recall": 0.9 },
+    "added": { "precision": 0.8, "recall": 0.8 },
+    "association": { "precision": 0.85, "recall": 0.85 },
+    "outcome": { "precision": 0.8, "recall": 0.8 },
+    "normalization": { "accuracy": 0.95 },
+    "byKind": {
+      "date": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "email": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "measurement": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "money": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "number": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "percentage": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "time": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "url": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } },
+      "version": { "sourceExtraction": { "recall": 0.9 }, "revisionExtraction": { "recall": 0.9 }, "normalization": { "accuracy": 0.95 } }
+    }
+  },
+  "cases": [
+    {
+      "id": "zh-product-001",
+      "split": "gate",
+      "language": "zh-CN",
+      "domain": "product-announcement",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["changed", "missing", "added", "url"],
+      "source": "星河科技将在2026年9月15日发布Nova v2.4.0，首期预算为¥30,000，详情见https://example.com/nova。",
+      "revision": "星河科技将在2026年9月18日发布Nova v2.4.0，首期预算为3万元，预计邀请100名用户。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "date", "start": 6, "end": 16, "raw": "2026年9月15日", "canonical": "2026-09-15", "valid": true, "scope": "core", "semanticKey": "launch.date" },
+          { "id": "s02", "kind": "version", "start": 23, "end": 29, "raw": "v2.4.0", "canonical": "2.4.0", "valid": true, "scope": "core", "semanticKey": "launch.version" },
+          { "id": "s03", "kind": "money", "start": 35, "end": 42, "raw": "¥30,000", "canonical": "CNY:30000", "valid": true, "scope": "core", "semanticKey": "launch.budget" },
+          { "id": "s04", "kind": "url", "start": 46, "end": 70, "raw": "https://example.com/nova", "canonical": "https://example.com/nova", "valid": true, "scope": "core", "semanticKey": "launch.url" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "date", "start": 6, "end": 16, "raw": "2026年9月18日", "canonical": "2026-09-18", "valid": true, "scope": "core", "semanticKey": "launch.date" },
+          { "id": "r02", "kind": "version", "start": 23, "end": 29, "raw": "v2.4.0", "canonical": "2.4.0", "valid": true, "scope": "core", "semanticKey": "launch.version" },
+          { "id": "r03", "kind": "money", "start": 35, "end": 38, "raw": "3万元", "canonical": "CNY:30000", "valid": true, "scope": "core", "semanticKey": "launch.budget" },
+          { "id": "r04", "kind": "measurement", "start": 43, "end": 47, "raw": "100名", "canonical": "100:person", "valid": true, "scope": "core", "semanticKey": "launch.invitees" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "changed" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "preserved" },
+        { "sourceId": "s04", "revisionId": null, "outcome": "missing" }
+      ]
+    },
+    {
+      "id": "en-ops-001",
+      "split": "gate",
+      "language": "en",
+      "domain": "operations",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["duplicate-values", "reordered", "changed", "association"],
+      "source": "North team has 100 users. South team has 100 users. The review starts at 09:30.",
+      "revision": "South team has 100 users. North team has 80 users. The review starts at 9:30 am.",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "number", "start": 15, "end": 18, "raw": "100", "canonical": "100", "valid": true, "scope": "core", "semanticKey": "north.users" },
+          { "id": "s02", "kind": "number", "start": 41, "end": 44, "raw": "100", "canonical": "100", "valid": true, "scope": "core", "semanticKey": "south.users" },
+          { "id": "s03", "kind": "time", "start": 73, "end": 78, "raw": "09:30", "canonical": "09:30", "valid": true, "scope": "core", "semanticKey": "review.time" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "number", "start": 15, "end": 18, "raw": "100", "canonical": "100", "valid": true, "scope": "core", "semanticKey": "south.users" },
+          { "id": "r02", "kind": "number", "start": 41, "end": 43, "raw": "80", "canonical": "80", "valid": true, "scope": "core", "semanticKey": "north.users" },
+          { "id": "r03", "kind": "time", "start": 72, "end": 79, "raw": "9:30 am", "canonical": "09:30", "valid": true, "scope": "core", "semanticKey": "review.time" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r02", "outcome": "changed" },
+        { "sourceId": "s02", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "zh-kpi-001",
+      "split": "gate",
+      "language": "zh-CN",
+      "domain": "business-kpi",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["duplicate-values", "reordered", "percentage", "money"],
+      "source": "华东区转化率为12.5%，华南区转化率为12.5%，季度收入为人民币200万。",
+      "revision": "华南区转化率为12.5%，华东区转化率为10%，季度收入为CNY 2,000,000。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "percentage", "start": 7, "end": 12, "raw": "12.5%", "canonical": "12.5", "valid": true, "scope": "core", "semanticKey": "east.conversion" },
+          { "id": "s02", "kind": "percentage", "start": 20, "end": 25, "raw": "12.5%", "canonical": "12.5", "valid": true, "scope": "core", "semanticKey": "south.conversion" },
+          { "id": "s03", "kind": "money", "start": 31, "end": 38, "raw": "人民币200万", "canonical": "CNY:2000000", "valid": true, "scope": "core", "semanticKey": "quarter.revenue" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "percentage", "start": 7, "end": 12, "raw": "12.5%", "canonical": "12.5", "valid": true, "scope": "core", "semanticKey": "south.conversion" },
+          { "id": "r02", "kind": "percentage", "start": 20, "end": 23, "raw": "10%", "canonical": "10", "valid": true, "scope": "core", "semanticKey": "east.conversion" },
+          { "id": "r03", "kind": "money", "start": 29, "end": 42, "raw": "CNY 2,000,000", "canonical": "CNY:2000000", "valid": true, "scope": "core", "semanticKey": "quarter.revenue" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r02", "outcome": "changed" },
+        { "sourceId": "s02", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "en-pricing-001",
+      "split": "gate",
+      "language": "en",
+      "domain": "pricing",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["reordered", "money", "version", "date"],
+      "source": "Starter costs $99 per month for 10 users. Pro costs $199 per month for 25 users. Version v3.2.1 ships on September 15, 2026.",
+      "revision": "Pro costs $199 per month for 25 users. Starter costs $109 per month for 10 users. Version 3.2.1 ships on Sep 15th, 2026.",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "money", "start": 14, "end": 17, "raw": "$99", "canonical": "USD:99", "valid": true, "scope": "core", "semanticKey": "starter.price" },
+          { "id": "s02", "kind": "number", "start": 32, "end": 34, "raw": "10", "canonical": "10", "valid": true, "scope": "core", "semanticKey": "starter.users" },
+          { "id": "s03", "kind": "money", "start": 52, "end": 56, "raw": "$199", "canonical": "USD:199", "valid": true, "scope": "core", "semanticKey": "pro.price" },
+          { "id": "s04", "kind": "number", "start": 71, "end": 73, "raw": "25", "canonical": "25", "valid": true, "scope": "core", "semanticKey": "pro.users" },
+          { "id": "s05", "kind": "version", "start": 89, "end": 95, "raw": "v3.2.1", "canonical": "3.2.1", "valid": true, "scope": "core", "semanticKey": "release.version" },
+          { "id": "s06", "kind": "date", "start": 105, "end": 123, "raw": "September 15, 2026", "canonical": "2026-09-15", "valid": true, "scope": "core", "semanticKey": "release.date" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "money", "start": 10, "end": 14, "raw": "$199", "canonical": "USD:199", "valid": true, "scope": "core", "semanticKey": "pro.price" },
+          { "id": "r02", "kind": "number", "start": 29, "end": 31, "raw": "25", "canonical": "25", "valid": true, "scope": "core", "semanticKey": "pro.users" },
+          { "id": "r03", "kind": "money", "start": 53, "end": 57, "raw": "$109", "canonical": "USD:109", "valid": true, "scope": "core", "semanticKey": "starter.price" },
+          { "id": "r04", "kind": "number", "start": 72, "end": 74, "raw": "10", "canonical": "10", "valid": true, "scope": "core", "semanticKey": "starter.users" },
+          { "id": "r05", "kind": "version", "start": 90, "end": 95, "raw": "3.2.1", "canonical": "3.2.1", "valid": true, "scope": "core", "semanticKey": "release.version" },
+          { "id": "r06", "kind": "date", "start": 105, "end": 119, "raw": "Sep 15th, 2026", "canonical": "2026-09-15", "valid": true, "scope": "core", "semanticKey": "release.date" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r03", "outcome": "changed" },
+        { "sourceId": "s02", "revisionId": "r04", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s04", "revisionId": "r02", "outcome": "preserved" },
+        { "sourceId": "s05", "revisionId": "r05", "outcome": "preserved" },
+        { "sourceId": "s06", "revisionId": "r06", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "mixed-release-001",
+      "split": "gate",
+      "language": "zh-CN+en",
+      "domain": "release-notes",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["mixed-language", "version", "url", "email", "added"],
+      "source": "Project Atlas v1.8.0 将于2026-10-01上线。Docs: https://example.com/Atlas，联系 atlas@example.com。",
+      "revision": "Project Atlas 1.8.0 goes live on 2026年10月1日。Docs: https://example.com/Atlas，联系 atlas@example.com。新增2个模板。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "version", "start": 14, "end": 20, "raw": "v1.8.0", "canonical": "1.8.0", "valid": true, "scope": "core", "semanticKey": "atlas.version" },
+          { "id": "s02", "kind": "date", "start": 23, "end": 33, "raw": "2026-10-01", "canonical": "2026-10-01", "valid": true, "scope": "core", "semanticKey": "atlas.date" },
+          { "id": "s03", "kind": "url", "start": 42, "end": 67, "raw": "https://example.com/Atlas", "canonical": "https://example.com/Atlas", "valid": true, "scope": "core", "semanticKey": "atlas.url" },
+          { "id": "s04", "kind": "email", "start": 71, "end": 88, "raw": "atlas@example.com", "canonical": "atlas@example.com", "valid": true, "scope": "core", "semanticKey": "atlas.email" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "version", "start": 14, "end": 19, "raw": "1.8.0", "canonical": "1.8.0", "valid": true, "scope": "core", "semanticKey": "atlas.version" },
+          { "id": "r02", "kind": "date", "start": 33, "end": 43, "raw": "2026年10月1日", "canonical": "2026-10-01", "valid": true, "scope": "core", "semanticKey": "atlas.date" },
+          { "id": "r03", "kind": "url", "start": 50, "end": 75, "raw": "https://example.com/Atlas", "canonical": "https://example.com/Atlas", "valid": true, "scope": "core", "semanticKey": "atlas.url" },
+          { "id": "r04", "kind": "email", "start": 79, "end": 96, "raw": "atlas@example.com", "canonical": "atlas@example.com", "valid": true, "scope": "core", "semanticKey": "atlas.email" },
+          { "id": "r05", "kind": "measurement", "start": 99, "end": 101, "raw": "2个", "canonical": "2:个", "valid": true, "scope": "core", "semanticKey": "atlas.templates" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "preserved" },
+        { "sourceId": "s04", "revisionId": "r04", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "zh-event-001",
+      "split": "dev",
+      "language": "zh-CN",
+      "domain": "event-schedule",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["date", "time", "missing", "email"],
+      "source": "创作者大会定于2026年11月8日14:30举行，现场限额300人，咨询events@example.com。",
+      "revision": "创作者大会定于2026-11-08，15:00举行，咨询events@example.com。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "date", "start": 7, "end": 17, "raw": "2026年11月8日", "canonical": "2026-11-08", "valid": true, "scope": "core", "semanticKey": "event.date" },
+          { "id": "s02", "kind": "time", "start": 17, "end": 22, "raw": "14:30", "canonical": "14:30", "valid": true, "scope": "core", "semanticKey": "event.time" },
+          { "id": "s03", "kind": "measurement", "start": 29, "end": 33, "raw": "300人", "canonical": "300:person", "valid": true, "scope": "core", "semanticKey": "event.capacity" },
+          { "id": "s04", "kind": "email", "start": 36, "end": 54, "raw": "events@example.com", "canonical": "events@example.com", "valid": true, "scope": "core", "semanticKey": "event.email" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "date", "start": 7, "end": 17, "raw": "2026-11-08", "canonical": "2026-11-08", "valid": true, "scope": "core", "semanticKey": "event.date" },
+          { "id": "r02", "kind": "time", "start": 18, "end": 23, "raw": "15:00", "canonical": "15:00", "valid": true, "scope": "core", "semanticKey": "event.time" },
+          { "id": "r03", "kind": "email", "start": 28, "end": 46, "raw": "events@example.com", "canonical": "events@example.com", "valid": true, "scope": "core", "semanticKey": "event.email" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "changed" },
+        { "sourceId": "s03", "revisionId": null, "outcome": "missing" },
+        { "sourceId": "s04", "revisionId": "r03", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "zh-procurement-001",
+      "split": "dev",
+      "language": "zh-CN",
+      "domain": "procurement",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["currency", "sign", "duration", "changed"],
+      "source": "本月采购预算为USD 100,000，成本变化为-5%，交付周期为30天。",
+      "revision": "本月采购预算为CNY 100,000，成本变化为5%，交付周期为30 days。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "money", "start": 7, "end": 18, "raw": "USD 100,000", "canonical": "USD:100000", "valid": true, "scope": "core", "semanticKey": "procurement.budget" },
+          { "id": "s02", "kind": "percentage", "start": 24, "end": 27, "raw": "-5%", "canonical": "-5", "valid": true, "scope": "core", "semanticKey": "procurement.cost-change" },
+          { "id": "s03", "kind": "measurement", "start": 33, "end": 36, "raw": "30天", "canonical": "duration-s:2592000", "valid": true, "scope": "core", "semanticKey": "procurement.lead-time" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "money", "start": 7, "end": 18, "raw": "CNY 100,000", "canonical": "CNY:100000", "valid": true, "scope": "core", "semanticKey": "procurement.budget" },
+          { "id": "r02", "kind": "percentage", "start": 24, "end": 26, "raw": "5%", "canonical": "5", "valid": true, "scope": "core", "semanticKey": "procurement.cost-change" },
+          { "id": "r03", "kind": "measurement", "start": 32, "end": 39, "raw": "30 days", "canonical": "duration-s:2592000", "valid": true, "scope": "core", "semanticKey": "procurement.lead-time" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "changed" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "changed" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "en-sla-001",
+      "split": "dev",
+      "language": "en",
+      "domain": "service-level-agreement",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["percentage", "duration", "date", "time"],
+      "source": "Service uptime is 99.9%. Response time is 2 hours. Maintenance begins at 23:00 on 2026-12-01.",
+      "revision": "Service uptime is 99.9 percent. Response time is 120 minutes. Maintenance begins at 22:00 on December 1, 2026.",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "percentage", "start": 18, "end": 23, "raw": "99.9%", "canonical": "99.9", "valid": true, "scope": "core", "semanticKey": "sla.uptime" },
+          { "id": "s02", "kind": "measurement", "start": 42, "end": 49, "raw": "2 hours", "canonical": "duration-s:7200", "valid": true, "scope": "core", "semanticKey": "sla.response-time" },
+          { "id": "s03", "kind": "time", "start": 73, "end": 78, "raw": "23:00", "canonical": "23:00", "valid": true, "scope": "core", "semanticKey": "maintenance.time" },
+          { "id": "s04", "kind": "date", "start": 82, "end": 92, "raw": "2026-12-01", "canonical": "2026-12-01", "valid": true, "scope": "core", "semanticKey": "maintenance.date" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "percentage", "start": 18, "end": 30, "raw": "99.9 percent", "canonical": "99.9", "valid": true, "scope": "core", "semanticKey": "sla.uptime" },
+          { "id": "r02", "kind": "measurement", "start": 49, "end": 60, "raw": "120 minutes", "canonical": "duration-s:7200", "valid": true, "scope": "core", "semanticKey": "sla.response-time" },
+          { "id": "r03", "kind": "time", "start": 84, "end": 89, "raw": "22:00", "canonical": "22:00", "valid": true, "scope": "core", "semanticKey": "maintenance.time" },
+          { "id": "r04", "kind": "date", "start": 93, "end": 109, "raw": "December 1, 2026", "canonical": "2026-12-01", "valid": true, "scope": "core", "semanticKey": "maintenance.date" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "changed" },
+        { "sourceId": "s04", "revisionId": "r04", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "zh-hard-negative-001",
+      "split": "dev",
+      "language": "zh-CN",
+      "domain": "editorial-guidance",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["hard-negative", "no-facts"],
+      "source": "团队强调保持原意，不要改动专有名词，也不要添加未经确认的承诺。",
+      "revision": "改写稿继续保持原意，并保留全部专有名词。",
+      "mentions": { "source": [], "revision": [] },
+      "relations": []
+    },
+    {
+      "id": "en-hard-negative-001",
+      "split": "dev",
+      "language": "en",
+      "domain": "editorial-guidance",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["hard-negative", "no-facts", "apostrophe-boundary"],
+      "source": "Don't change Bob's wording; the café's sign says hello.",
+      "revision": "Keep Bob's wording and the café sign unchanged.",
+      "mentions": { "source": [], "revision": [] },
+      "relations": []
+    },
+    {
+      "id": "mixed-fullwidth-001",
+      "split": "gate",
+      "language": "zh-CN+en",
+      "domain": "launch-brief",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["mixed-language", "full-width", "changed", "normalization"],
+      "source": "预算￥３０，０００，发布日期２０２６．０９．１５，首批１００人，版本ｖ１．２．０。",
+      "revision": "Budget ¥30,000，发布日期2026/09/15，首批80 people，版本v1.2.0。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "money", "start": 2, "end": 9, "raw": "￥３０，０００", "canonical": "CNY:30000", "valid": true, "scope": "core", "semanticKey": "brief.budget" },
+          { "id": "s02", "kind": "date", "start": 14, "end": 24, "raw": "２０２６．０９．１５", "canonical": "2026-09-15", "valid": true, "scope": "core", "semanticKey": "brief.date" },
+          { "id": "s03", "kind": "measurement", "start": 27, "end": 31, "raw": "１００人", "canonical": "100:person", "valid": true, "scope": "core", "semanticKey": "brief.cohort" },
+          { "id": "s04", "kind": "version", "start": 34, "end": 40, "raw": "ｖ１．２．０", "canonical": "1.2.0", "valid": true, "scope": "core", "semanticKey": "brief.version" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "money", "start": 7, "end": 14, "raw": "¥30,000", "canonical": "CNY:30000", "valid": true, "scope": "core", "semanticKey": "brief.budget" },
+          { "id": "r02", "kind": "date", "start": 19, "end": 29, "raw": "2026/09/15", "canonical": "2026-09-15", "valid": true, "scope": "core", "semanticKey": "brief.date" },
+          { "id": "r03", "kind": "measurement", "start": 32, "end": 41, "raw": "80 people", "canonical": "80:person", "valid": true, "scope": "core", "semanticKey": "brief.cohort" },
+          { "id": "r04", "kind": "version", "start": 44, "end": 50, "raw": "v1.2.0", "canonical": "1.2.0", "valid": true, "scope": "core", "semanticKey": "brief.version" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "preserved" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "preserved" },
+        { "sourceId": "s03", "revisionId": "r03", "outcome": "changed" },
+        { "sourceId": "s04", "revisionId": "r04", "outcome": "preserved" }
+      ]
+    },
+    {
+      "id": "en-added-001",
+      "split": "dev",
+      "language": "en",
+      "domain": "launch-brief",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["added", "source-without-facts", "url", "date"],
+      "source": "The launch brief is ready for review.",
+      "revision": "The launch brief is ready for review on 2027-01-15. Details: https://example.com/brief for editors.",
+      "mentions": {
+        "source": [],
+        "revision": [
+          { "id": "r01", "kind": "date", "start": 40, "end": 50, "raw": "2027-01-15", "canonical": "2027-01-15", "valid": true, "scope": "core", "semanticKey": "brief.new-date" },
+          { "id": "r02", "kind": "url", "start": 61, "end": 86, "raw": "https://example.com/brief", "canonical": "https://example.com/brief", "valid": true, "scope": "core", "semanticKey": "brief.new-url" }
+        ]
+      },
+      "relations": []
+    },
+    {
+      "id": "zh-missing-001",
+      "split": "dev",
+      "language": "zh-CN",
+      "domain": "internal-pilot",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["missing", "measurement", "version", "date"],
+      "source": "内部试用覆盖50人，候选版本为v0.9.0，反馈截止2026年8月31日。",
+      "revision": "内部试用已经结束，反馈窗口也已关闭。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "measurement", "start": 6, "end": 9, "raw": "50人", "canonical": "50:person", "valid": true, "scope": "core", "semanticKey": "pilot.users" },
+          { "id": "s02", "kind": "version", "start": 15, "end": 21, "raw": "v0.9.0", "canonical": "0.9.0", "valid": true, "scope": "core", "semanticKey": "pilot.version" },
+          { "id": "s03", "kind": "date", "start": 26, "end": 36, "raw": "2026年8月31日", "canonical": "2026-08-31", "valid": true, "scope": "core", "semanticKey": "pilot.feedback-date" }
+        ],
+        "revision": []
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": null, "outcome": "missing" },
+        { "sourceId": "s02", "revisionId": null, "outcome": "missing" },
+        { "sourceId": "s03", "revisionId": null, "outcome": "missing" }
+      ]
+    },
+    {
+      "id": "zh-invalid-001",
+      "split": "dev",
+      "language": "zh-CN",
+      "domain": "schedule",
+      "provenance": { "type": "fictional-composite", "license": "CC0-1.0" },
+      "tags": ["invalid", "date", "time"],
+      "source": "截止日期为2026-02-30，会议时间25:99。",
+      "revision": "截止日期为2026-02-30，会议时间25:99。",
+      "mentions": {
+        "source": [
+          { "id": "s01", "kind": "date", "start": 5, "end": 15, "raw": "2026-02-30", "canonical": "2026-02-30", "valid": false, "scope": "core", "semanticKey": "schedule.deadline" },
+          { "id": "s02", "kind": "time", "start": 20, "end": 25, "raw": "25:99", "canonical": "25:99", "valid": false, "scope": "core", "semanticKey": "schedule.time" }
+        ],
+        "revision": [
+          { "id": "r01", "kind": "date", "start": 5, "end": 15, "raw": "2026-02-30", "canonical": "2026-02-30", "valid": false, "scope": "core", "semanticKey": "schedule.deadline" },
+          { "id": "r02", "kind": "time", "start": 20, "end": 25, "raw": "25:99", "canonical": "25:99", "valid": false, "scope": "core", "semanticKey": "schedule.time" }
+        ]
+      },
+      "relations": [
+        { "sourceId": "s01", "revisionId": "r01", "outcome": "invalid" },
+        { "sourceId": "s02", "revisionId": "r02", "outcome": "invalid" }
+      ]
+    }
+  ]
+}

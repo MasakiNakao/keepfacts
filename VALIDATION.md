@@ -18,24 +18,30 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.1.7 snapshot
+## v0.2.0 snapshot
 
 - 37 public validation cases
-- 38 automated unit tests plus Chromium browser and accessibility checks
+- 53 automated unit/evaluation/performance tests plus 16 Chromium browser and
+  accessibility checks across desktop and 390 px mobile projects
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
 - CI runs the same unit, desktop, 390 px mobile, and accessibility checks on
   every push and pull request
+- Automatic and must-preserve result cards are limited to 50 per page, with
+  focus moved to the newly selected page.
+- Dense 100-, 300-, and 1,000-fact comparisons each have a five-second
+  regression budget; 1,000 must-preserve entries have a one-second budget.
 
 The corpus covers dates, times, money, percentages, measurements, numeric
 ranges, versions, URLs, emails, quoted text, standalone numbers, duplicate
 facts, reordered facts, arbitrary-precision decimals, signed values, full-width
 numeric forms, and false-positive text boundaries.
 
-Passing this corpus is a regression guarantee for these named cases. It is not
-an accuracy percentage and should not be interpreted as proof that KeepFacts
-understands every document.
+Passing this corpus is a regression guarantee for these named cases. The
+separate manually annotated evaluation described in [EVALUATION.md](EVALUATION.md)
+reports extraction and association metrics; neither suite should be interpreted
+as proof that KeepFacts understands every document.
 
 ## Matching guarantees
 

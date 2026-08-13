@@ -13,14 +13,14 @@ KeepFacts is a small, privacy-first checker for facts that disappear or change d
 
 All analysis runs locally in the browser. No text is uploaded, no account is required, and no AI API key is needed.
 
-[![KeepFacts interface showing a source-to-rewrite fact comparison](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
+[![KeepFacts v0.2 interface showing fact comparison and human review decisions](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
 
 ## Try it in 30 seconds
 
 1. Open the [live demo](https://masakinakao.github.io/keepfacts/).
 2. Paste the original text on the left and the rewrite on the right.
 3. Optionally add one must-preserve name or phrase per line.
-4. Select **Check the facts** to create a fixed result, review yellow items, then copy or download the Markdown report. Recheck after editing either text.
+4. Select **Check the facts** to create a fixed result. Mark findings as **Confirmed issue**, **Acceptable rewrite**, or **Ignored**, then copy or download the Markdown report. Recheck after editing either text.
 
 ## Why KeepFacts?
 
@@ -45,8 +45,11 @@ It is intentionally narrow:
 - Precision-safe signed numbers plus common Chinese, English, and full-width
   formatting equivalence
 - User-defined names, terms, and phrases that must be preserved, reported separately from automatic fact retention
+- Per-finding human decisions and pending-review progress across automatic, must-preserve, and newly added findings
 - Traceable Markdown reports with source/rewrite context, app version, and build commit
-- Responsive, keyboard-accessible review controls with automated browser checks
+- Fifty-item pagination for large automatic and must-preserve result sets
+- Native radio-group decisions and focus-managed pagination, covered by
+  responsive keyboard and browser accessibility checks
 
 ## Run locally
 
@@ -61,6 +64,12 @@ Run the tests:
 
 ```bash
 npm test
+```
+
+Run the manually annotated evaluation corpus:
+
+```bash
+npm run eval
 ```
 
 Create a production build:
@@ -78,16 +87,19 @@ npm run test:e2e
 
 ## Validation
 
-The repository includes a public, data-driven validation corpus covering
-preserved, changed, missing, added, duplicate, and false-positive boundary
-cases. See [VALIDATION.md](VALIDATION.md) for the current snapshot, reproduction
-steps, matching guarantees, and known limitations.
+The repository includes both fast regression cases and a realistic, manually
+annotated public evaluation corpus. Evaluation reports extraction, alert,
+added-fact, association, outcome, and normalization metrics rather than only
+aggregate counts. See [VALIDATION.md](VALIDATION.md) and
+[EVALUATION.md](EVALUATION.md) for the current snapshot and methodology.
 
 ## How matching works
 
 KeepFacts extracts facts in priority order so nested numbers are not counted twice. It then normalizes safe formatting differences—for example, `¥30,000` and `3万元`—using exact decimal strings rather than floating-point arithmetic. Context-aware, one-to-one matching keeps repeated or reordered values attached to the most likely subject. Unmatched facts are shown as missing, possibly changed, or newly introduced.
 
-No model is used in this process. Requested comparisons run in a local Web Worker so large checks do not block text editing. Results remain reproducible, but deliberately limited to facts the rules can identify.
+No model is used in this process. Requested comparisons run in a local Web Worker so large checks do not block text editing. Context features are cached once per fact before one-to-one assignment, and result cards are paginated for large documents. Results remain reproducible, but deliberately limited to facts the rules can identify.
+
+Human decisions are a separate review layer: they never rewrite automatic counts or retention. They remain in page memory only and are included when you copy or download the report; KeepFacts does not persist source text, rewrite text, context, or review decisions in Web Storage.
 
 ## Roadmap
 

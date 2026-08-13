@@ -1,4 +1,10 @@
 import type { ComparedFact, Fact, FactComparison, FactKind } from "./facts";
+import {
+  reviewDecisionKey,
+  summarizeReviews,
+  type ReviewDecisions,
+  type ReviewScope,
+} from "./review.ts";
 
 export type ReportLocale = "zh" | "en";
 
@@ -18,6 +24,17 @@ const labels: Record<
     automaticReview: string;
     automaticPreserved: string;
     automaticAdded: string;
+    manualSummary: string;
+    manualTotal: string;
+    manualStatus: string;
+    manualDraft: string;
+    manualComplete: string;
+    manualPending: string;
+    manualConfirmed: string;
+    manualAccepted: string;
+    manualIgnored: string;
+    manualDecision: string;
+    manualNote: string;
     requiredCount: string;
     requiredCheckable: string;
     requiredMissing: string;
@@ -57,6 +74,17 @@ const labels: Record<
     automaticReview: "自动事实：需确认",
     automaticPreserved: "自动事实：已保留",
     automaticAdded: "自动事实：改写新增",
+    manualSummary: "人工审阅摘要",
+    manualTotal: "待审阅项目",
+    manualStatus: "报告状态",
+    manualDraft: "草稿（仍有待处理项）",
+    manualComplete: "人工审阅完成",
+    manualPending: "待处理",
+    manualConfirmed: "确认需处理",
+    manualAccepted: "改写合理",
+    manualIgnored: "已忽略",
+    manualDecision: "人工结论",
+    manualNote: "人工结论独立于自动统计，只存在当前页面，并写入本次导出的报告。",
     requiredCount: "必保项目",
     requiredCheckable: "可核对",
     requiredMissing: "改写缺失",
@@ -109,6 +137,18 @@ const labels: Record<
     automaticReview: "Automatic facts: needs review",
     automaticPreserved: "Automatic facts: preserved",
     automaticAdded: "Automatic facts: new in rewrite",
+    manualSummary: "Human review summary",
+    manualTotal: "Reviewable items",
+    manualStatus: "Report status",
+    manualDraft: "Draft (pending items remain)",
+    manualComplete: "Human review complete",
+    manualPending: "Pending",
+    manualConfirmed: "Confirmed issue",
+    manualAccepted: "Acceptable rewrite",
+    manualIgnored: "Ignored",
+    manualDecision: "Human decision",
+    manualNote:
+      "Human decisions are separate from automatic metrics, remain only on the current page, and are included in this exported report.",
     requiredCount: "Required items",
     requiredCheckable: "Checkable",
     requiredMissing: "Missing from rewrite",
@@ -163,9 +203,14 @@ function inlineCode(value: string) {
 function factLine(
   fact: Fact | ComparedFact,
   locale: ReportLocale,
-  added = false,
+  options: {
+    added?: boolean;
+    scope?: ReviewScope;
+    reviewDecisions?: ReviewDecisions;
+  } = {},
 ) {
   const t = labels[locale];
+  const { added = false, scope, reviewDecisions = {} } = options;
   const compared = fact as ComparedFact;
   let note = added ? t.newFact : t.preserved;
 
@@ -188,9 +233,22 @@ function factLine(
     : compared.matched ?? compared.possibleMatch;
   const detail = (label: string, value?: string) =>
     `    - **${label}:** ${value ? inlineCode(value) : t.notFound}`;
+  const reviewable = added || (!added && compared.status === "review");
+  const decision =
+    reviewable && scope
+      ? reviewDecisions[reviewDecisionKey(scope, fact)]
+      : undefined;
+  const decisionLabel = decision
+    ? {
+        confirmed: t.manualConfirmed,
+        accepted: t.manualAccepted,
+        ignored: t.manualIgnored,
+      }[decision]
+    : t.manualPending;
 
   return [
     `- **${t.kinds[fact.kind]}** ${inlineCode(fact.raw)} — ${note}`,
+    ...(reviewable ? [detail(t.manualDecision, decisionLabel)] : []),
     detail(t.sourceValue, sourceFact?.raw),
     detail(t.rewriteValue, rewriteFact?.raw),
     detail(t.sourceContext, sourceFact?.context),
@@ -223,11 +281,15 @@ function section(
   title: string,
   facts: Array<Fact | ComparedFact>,
   locale: ReportLocale,
-  added = false,
+  options: {
+    added?: boolean;
+    scope?: ReviewScope;
+    reviewDecisions?: ReviewDecisions;
+  } = {},
 ) {
   const t = labels[locale];
   const lines = facts.length
-    ? facts.flatMap((fact) => factLine(fact, locale, added))
+    ? facts.flatMap((fact) => factLine(fact, locale, options))
     : [`- ${t.none}`];
   return [`## ${title}`, "", ...lines, ""].join("\n");
 }
@@ -241,6 +303,7 @@ export function buildMarkdownReport(
         generatedAt?: Date;
         appVersion?: string;
         commitSha?: string;
+        reviewDecisions?: ReviewDecisions;
       } = {},
 ) {
   const t = labels[locale];
@@ -248,6 +311,8 @@ export function buildMarkdownReport(
   const generatedAt = normalizedOptions.generatedAt ?? new Date();
   const appVersion = normalizedOptions.appVersion?.trim() || "unknown";
   const commitSha = normalizedOptions.commitSha?.trim() || "local";
+  const reviewDecisions = normalizedOptions.reviewDecisions ?? {};
+  const manual = summarizeReviews(comparison, reviewDecisions);
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
@@ -281,7 +346,27 @@ export function buildMarkdownReport(
         `| ${t.requiredNotInSource} | ${comparison.requiredNotInSourceCount} |`,
         `| ${t.requiredRetention} | ${requiredRetentionLabel} |`,
         "",
-        section(t.requiredChecks, comparison.requiredFacts, locale),
+        section(t.requiredChecks, comparison.requiredFacts, locale, {
+          scope: "required",
+          reviewDecisions,
+        }),
+      ]
+    : [];
+  const manualSection = manual.total
+    ? [
+        `## ${t.manualSummary}`,
+        "",
+        `| ${t.metric} | ${t.value} |`,
+        "| --- | --- |",
+        `| ${t.manualStatus} | ${manual.pending ? t.manualDraft : t.manualComplete} |`,
+        `| ${t.manualTotal} | ${manual.total} |`,
+        `| ${t.manualPending} | ${manual.pending} |`,
+        `| ${t.manualConfirmed} | ${manual.confirmed} |`,
+        `| ${t.manualAccepted} | ${manual.accepted} |`,
+        `| ${t.manualIgnored} | ${manual.ignored} |`,
+        "",
+        `> ${t.manualNote}`,
+        "",
       ]
     : [];
 
@@ -303,9 +388,17 @@ export function buildMarkdownReport(
     `| ${t.retention} | ${retentionLabel} |`,
     "",
     ...requiredSections,
-    section(t.automaticReview, review, locale),
+    ...manualSection,
+    section(t.automaticReview, review, locale, {
+      scope: "source",
+      reviewDecisions,
+    }),
     section(t.automaticPreserved, preserved, locale),
-    section(t.automaticAdded, comparison.addedFacts, locale, true),
+    section(t.automaticAdded, comparison.addedFacts, locale, {
+      added: true,
+      scope: "added",
+      reviewDecisions,
+    }),
     `> ${t.disclaimer}`,
     "",
   ].join("\n");

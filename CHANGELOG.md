@@ -2,6 +2,36 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.2.0] - 2026-08-13
+
+### Added
+
+- Add an in-page human review workflow for automatic warnings, must-preserve
+  issues, and facts introduced only in the rewrite.
+- Add `confirmed issue`, `acceptable rewrite`, and `ignored` decisions without
+  changing deterministic machine counts or retention metrics.
+- Include human review progress and per-finding decisions in bilingual,
+  traceable Markdown reports.
+- Add a realistic, manually annotated evaluation corpus with extraction,
+  alert, added-fact, association, outcome, and normalization metrics.
+- Paginate automatic and must-preserve result cards in groups of 50 for large
+  documents, with keyboard focus moved to each new page.
+
+### Changed
+
+- Cache context features once per fact before global assignment, substantially
+  reducing comparison time for fact-dense documents.
+- Debounce must-preserve input feedback so full source scans no longer run on
+  every render.
+- Use one native radio group per finding so a complete decision set occupies a
+  single keyboard tab stop and always includes an explicit pending state.
+- Make report-version browser assertions follow package metadata automatically.
+
+### Privacy
+
+- Keep human review decisions in page memory only; KeepFacts does not persist
+  source text, rewrite text, fact context, or review decisions in Web Storage.
+
 ## [0.1.7] - 2026-08-12
 
 ### Fixed

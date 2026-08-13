@@ -7,7 +7,9 @@ Thank you for helping KeepFacts catch factual drift more reliably.
 1. Keep the change focused on one fact type or one interface problem.
 2. Add a minimal test that fails before the change and passes afterward.
 3. Add at least one false-positive case for new recognizers.
-4. Run `npm run check` locally.
+4. Update the annotated evaluation corpus when the change affects extraction,
+   normalization, alerting, or fact association.
+5. Run `npm run check` locally.
 
 ## Development
 
@@ -21,3 +23,8 @@ new rules should remain explainable and must not send user text to a server.
 
 Please use fictional or public text in issues and tests. Do not submit personal,
 confidential, medical, financial, or customer information.
+
+Evaluation annotations use JavaScript UTF-16 offsets and must satisfy
+`text.slice(start, end) === raw`. Mention IDs and source-to-rewrite relations
+are human-maintained ground truth; do not generate them from the current
+detector and treat that output as an answer key. See `EVALUATION.md`.

@@ -1,6 +1,6 @@
 {
   "name": "keepfacts",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "A local-first checker for facts changed or lost during AI rewriting.",
   "license": "MIT",
   "private": true,
@@ -10,13 +10,15 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.check.json",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/facts.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "eval": "node --experimental-strip-types scripts/evaluate.ts",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:ci": "playwright test",
     "verify:release": "node scripts/verify-release.mjs",
-    "check": "npm run verify:release && npm run test && npm run build",
+    "check": "npm run verify:release && npm run test && npm run eval && npm run build",
     "check:all": "npm run check && npm run test:e2e:ci"
   },
   "dependencies": {

@@ -782,14 +782,33 @@ function weightedDice(
   return (2 * overlapWeight) / (leftWeight + rightWeight);
 }
 
+interface ContextFeatures {
+  broadPairs: Set<string>;
+  localPairs: Set<string>;
+  nearbyWeights: Map<string, number>;
+}
+
+function contextFeatures(text: string, fact: Fact): ContextFeatures {
+  return {
+    broadPairs: bigrams(contextFingerprint(fact)),
+    localPairs: bigrams(localSegmentFingerprint(text, fact)),
+    nearbyWeights: nearbyTokenWeights(text, fact),
+  };
+}
+
+function diceSets(left: Set<string>, right: Set<string>) {
+  if (!left.size || !right.size) return 0;
+  let overlap = 0;
+  for (const value of left) if (right.has(value)) overlap += 1;
+  return (2 * overlap) / (left.size + right.size);
+}
+
 function contextSimilarity(
-  left: Fact,
-  right: Fact,
-  leftText?: string,
-  rightText?: string,
+  left: ContextFeatures,
+  right: ContextFeatures,
 ) {
-  const leftPairs = bigrams(contextFingerprint(left));
-  const rightPairs = bigrams(contextFingerprint(right));
+  const leftPairs = left.broadPairs;
+  const rightPairs = right.broadPairs;
   let broadScore = 0;
   let overlapCount = 0;
   for (const pair of leftPairs) {
@@ -799,20 +818,8 @@ function contextSimilarity(
     broadScore = (2 * overlapCount) / (leftPairs.size + rightPairs.size);
   }
 
-  if (leftText === undefined || rightText === undefined) return broadScore;
-
-  const nearbyScore = weightedDice(
-    nearbyTokenWeights(leftText, left),
-    nearbyTokenWeights(rightText, right),
-  );
-  const localScore = (() => {
-    const leftPairs = bigrams(localSegmentFingerprint(leftText, left));
-    const rightPairs = bigrams(localSegmentFingerprint(rightText, right));
-    if (!leftPairs.size || !rightPairs.size) return 0;
-    let overlap = 0;
-    for (const pair of leftPairs) if (rightPairs.has(pair)) overlap += 1;
-    return (2 * overlap) / (leftPairs.size + rightPairs.size);
-  })();
+  const nearbyScore = weightedDice(left.nearbyWeights, right.nearbyWeights);
+  const localScore = diceSets(left.localPairs, right.localPairs);
 
   return Math.max(localScore, nearbyScore * 0.9, broadScore * 0.75);
 }
@@ -916,9 +923,16 @@ function pairFacts(
     const revisions = revisionFacts.filter((fact) => fact.kind === kind);
     if (!revisions.length) continue;
 
-    const contextScores = sources.map((sourceFact) =>
-      revisions.map((revisionFact) =>
-        contextSimilarity(sourceFact, revisionFact, sourceText, revisionText),
+    const sourceFeatures = sources.map((fact) =>
+      contextFeatures(sourceText, fact),
+    );
+    const revisionFeatures = revisions.map((fact) =>
+      contextFeatures(revisionText, fact),
+    );
+
+    const contextScores = sourceFeatures.map((sourceFeature) =>
+      revisionFeatures.map((revisionFeature) =>
+        contextSimilarity(sourceFeature, revisionFeature),
       ),
     );
 

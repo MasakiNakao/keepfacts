@@ -4,6 +4,11 @@ KeepFacts is deterministic: the same source and rewrite produce the same
 result. This document explains what the public test corpus covers, how to
 reproduce it, and where human review is still required.
 
+KeepFacts is an exact-fact preservation checker for AI-transformed text, not a
+truth-verification service. It compares a source and rewrite without consulting
+external evidence. Recognition is currently optimized for common Chinese and
+English formats.
+
 ## Reproduce the current snapshot
 
 Requirements: Node.js 22.13 or newer.
@@ -18,11 +23,12 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.2.0 snapshot
+## v0.2.1 snapshot
 
 - 37 public validation cases
-- 53 automated unit/evaluation/performance tests plus 16 Chromium browser and
-  accessibility checks across desktop and 390 px mobile projects
+- 54 automated unit/evaluation/performance tests plus 33 passing Chromium
+  browser and accessibility checks across desktop and 390 px mobile projects
+  (with one intentional desktop skip for the mobile-only privacy-copy check)
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
@@ -42,6 +48,13 @@ Passing this corpus is a regression guarantee for these named cases. The
 separate manually annotated evaluation described in [EVALUATION.md](EVALUATION.md)
 reports extraction and association metrics; neither suite should be interpreted
 as proof that KeepFacts understands every document.
+
+The product's extracted-fact retention percentage is calculated only from
+source facts recognized by the supported rules. It measures preserved matches
+within that extracted set; it is not extraction coverage, truth accuracy, or a
+full-document semantic score. v0.2.1 retains the v0.2 comparison, human-review,
+pagination, and Markdown-report workflow while making these boundaries
+explicit.
 
 ## Matching guarantees
 

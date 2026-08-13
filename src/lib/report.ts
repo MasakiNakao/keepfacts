@@ -1,5 +1,6 @@
 import type { ComparedFact, Fact, FactComparison, FactKind } from "./facts";
 import {
+  getReviewOutcome,
   reviewDecisionKey,
   summarizeReviews,
   type ReviewDecisions,
@@ -28,7 +29,8 @@ const labels: Record<
     manualTotal: string;
     manualStatus: string;
     manualDraft: string;
-    manualComplete: string;
+    manualNeedsChanges: string;
+    manualAcceptable: string;
     manualPending: string;
     manualConfirmed: string;
     manualAccepted: string;
@@ -44,6 +46,7 @@ const labels: Record<
     review: string;
     added: string;
     retention: string;
+    retentionNote: string;
     none: string;
     changed: string;
     missing: string;
@@ -78,7 +81,8 @@ const labels: Record<
     manualTotal: "待审阅项目",
     manualStatus: "报告状态",
     manualDraft: "草稿（仍有待处理项）",
-    manualComplete: "人工审阅完成",
+    manualNeedsChanges: "需要修改",
+    manualAcceptable: "审阅完成 · 无确认问题",
     manualPending: "待处理",
     manualConfirmed: "确认需处理",
     manualAccepted: "改写合理",
@@ -93,7 +97,9 @@ const labels: Record<
     preserved: "已保留",
     review: "需确认",
     added: "改写新增",
-    retention: "自动事实保留率",
+    retention: "已提取事实保留率",
+    retentionNote:
+      "保留率只统计已提取的硬事实，不代表事实真假、抽取覆盖率或全文语义完整。",
     none: "无",
     changed: "可能改成",
     missing: "改写稿中未找到对应事实",
@@ -141,7 +147,8 @@ const labels: Record<
     manualTotal: "Reviewable items",
     manualStatus: "Report status",
     manualDraft: "Draft (pending items remain)",
-    manualComplete: "Human review complete",
+    manualNeedsChanges: "Needs changes",
+    manualAcceptable: "Review complete · no confirmed issues",
     manualPending: "Pending",
     manualConfirmed: "Confirmed issue",
     manualAccepted: "Acceptable rewrite",
@@ -157,7 +164,9 @@ const labels: Record<
     preserved: "Preserved",
     review: "Needs review",
     added: "New in rewrite",
-    retention: "Automatic retention",
+    retention: "Extracted-fact retention",
+    retentionNote:
+      "Retention includes extracted exact facts only; it does not represent truth, extraction coverage, or full-document semantic completeness.",
     none: "None",
     changed: "Possibly changed to",
     missing: "No corresponding fact found in the rewrite",
@@ -313,6 +322,13 @@ export function buildMarkdownReport(
   const commitSha = normalizedOptions.commitSha?.trim() || "local";
   const reviewDecisions = normalizedOptions.reviewDecisions ?? {};
   const manual = summarizeReviews(comparison, reviewDecisions);
+  const manualOutcome = getReviewOutcome(manual);
+  const manualStatus =
+    manualOutcome === "draft"
+      ? t.manualDraft
+      : manualOutcome === "needs-changes"
+        ? t.manualNeedsChanges
+        : t.manualAcceptable;
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
@@ -358,7 +374,7 @@ export function buildMarkdownReport(
         "",
         `| ${t.metric} | ${t.value} |`,
         "| --- | --- |",
-        `| ${t.manualStatus} | ${manual.pending ? t.manualDraft : t.manualComplete} |`,
+        `| ${t.manualStatus} | ${manualStatus} |`,
         `| ${t.manualTotal} | ${manual.total} |`,
         `| ${t.manualPending} | ${manual.pending} |`,
         `| ${t.manualConfirmed} | ${manual.confirmed} |`,
@@ -386,6 +402,8 @@ export function buildMarkdownReport(
     `| ${t.review} | ${comparison.reviewCount} |`,
     `| ${t.added} | ${comparison.addedCount} |`,
     `| ${t.retention} | ${retentionLabel} |`,
+    "",
+    `> ${t.retentionNote}`,
     "",
     ...requiredSections,
     ...manualSection,

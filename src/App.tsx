@@ -8,6 +8,7 @@ import {
 } from "./lib/facts";
 import { buildMarkdownReport, formatLocalDate } from "./lib/report";
 import {
+  getReviewOutcome,
   reviewDecisionKey,
   summarizeReviews,
   type ReviewDecision,
@@ -42,14 +43,35 @@ const examples = {
   },
 };
 
+function detectInitialLocale(): Locale {
+  if (typeof window !== "undefined") {
+    const requested = new URLSearchParams(window.location.search).get("lang");
+    if (requested === "zh" || requested === "en") return requested;
+  }
+  if (typeof navigator !== "undefined") {
+    const preferred = navigator.languages?.[0] ?? navigator.language;
+    return preferred?.toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+  return "zh";
+}
+
 const copy = {
   zh: {
-    privacy: "本地运行 · 文本不会上传",
-    eyebrow: "AI 文本事实核对器",
+    privacy: "本地处理 · 文本不会上传",
+    mobilePrivacy: "本地处理 · 文本不会上传",
+    eyebrow: "AI 改写硬事实保留检查",
     titleA: "措辞可以改变，",
     titleB: "事实不该走样。",
     intro:
-      "对照原文和 AI 改写稿，找出被保留、疑似修改、遗漏或新增的数字、日期、金额和链接。",
+      "在接受 AI 改写、总结或翻译前，对照可信原文找出被改变、遗漏或新增的日期、金额、数量和链接；它不查证事实真假。",
+    checkOwnText: "核对我的文本",
+    viewExample: "查看示例结果",
+    exampleMode: "示例模式",
+    ownTextMode: "我的文本",
+    exampleModeHint: "当前显示示例内容和示例结果。",
+    ownTextModeHint: "粘贴可信原文和需要审核的新稿",
+    useOwnText: "使用我的文本",
+    localeScope: "当前针对常见中英文数字、日期、币种和单位格式优化。",
     source: "原文",
     sourceHint: "需要保留事实的文本",
     revision: "改写稿",
@@ -62,13 +84,13 @@ const copy = {
     placeholderRevision: "在这里粘贴改写稿……",
     loadExample: "载入示例",
     clear: "清空",
-    compare: "开始核对",
+    compare: "对照两版",
     comparing: "正在核对…",
     compareFailed: "核对未完成，请重试。上次结果已保留。",
     compareHint: "点击后生成一份固定结果；修改内容后请重新核对",
     resultsOutdated: "输入内容已更改，以下仍是上次核对结果。请重新核对后再导出报告。",
     resultTitle: "核对结果",
-    resultIntro: "先看需要人工确认的项目，再决定是否接受这次改写。",
+    resultIntro: "先处理需要人工确认的项目，再判断是否接受这次改写。",
     resultReady: (automatic: number, review: number, added: number, required: number) =>
       `核对完成：自动事实 ${automatic} 项，需确认 ${review} 项，新增 ${added} 项，必须保留异常 ${required} 项。`,
     copyReport: "复制报告",
@@ -76,12 +98,13 @@ const copy = {
     copied: "报告已复制",
     copyFailed: "复制失败，请使用下载功能",
     downloaded: "报告已下载",
-    scanned: "自动事实",
+    scanned: "已提取硬事实",
     preserved: "已保留",
     review: "需确认",
     reviewItems: "人工审阅",
     added: "改写新增",
-    score: "自动保留率",
+    score: "已提取事实保留率",
+    retentionDisclaimer: "只统计规则识别到的硬事实，不代表全文事实正确。",
     requiredResults: "必须保留检查",
     requiredConfigured: "已配置",
     requiredCheckable: "可核对",
@@ -103,6 +126,14 @@ const copy = {
     manualConfirmed: "确认需处理",
     manualAccepted: "改写合理",
     manualIgnored: "已忽略",
+    reviewDraft: "审阅草稿",
+    reviewNeedsChanges: "需要修改",
+    reviewAcceptable: "审阅完成 · 无确认问题",
+    reviewNoFindings: "未发现需人工审阅项",
+    reviewOutdated: "结果已过期",
+    reviewOutcomeLabel: "当前审阅状态",
+    resetReviewConfirm: (count: number) =>
+      `已有 ${count} 条人工结论。继续操作将清除这些结论，是否继续？`,
     manualDecision: "人工结论",
     manualDecisionGroup: "选择人工结论",
     previousPage: "上一页",
@@ -122,7 +153,7 @@ const copy = {
     revisionContext: "改写语境",
     comparisonContext: "查看原文与改写语境",
     disclaimer:
-      "KeepFacts 当前只检查可精确比对的硬事实，不判断整段文字的语义是否正确。黄色项目需要你人工确认。",
+      "KeepFacts 只比较两版文本中可精确提取的硬事实，不联网查证事实真假，也不判断全文语义。黄色项目需要人工确认。",
     footerPrefix: "实验版",
     footer: "确定性规则 · 无追踪代码",
     homeLabel: "KeepFacts 首页",
@@ -130,12 +161,21 @@ const copy = {
     changeLanguage: "English",
   },
   en: {
-    privacy: "Runs locally · Your text stays private",
-    eyebrow: "AI rewrite fact checker",
+    privacy: "Local only · Text is not uploaded",
+    mobilePrivacy: "Local only · Text is not uploaded",
+    eyebrow: "AI rewrite exact-fact preservation",
     titleA: "Change the wording,",
     titleB: "not the facts.",
     intro:
-      "Compare a source with an AI rewrite to catch preserved, changed, missing, or newly added numbers, dates, money, and links.",
+      "Before accepting an AI rewrite, summary, or translation, compare it with a trusted source to catch changed, missing, or new exact facts. KeepFacts does not verify whether claims are true.",
+    checkOwnText: "Check my text",
+    viewExample: "View example results",
+    exampleMode: "Example mode",
+    ownTextMode: "My text",
+    exampleModeHint: "You are viewing example content and results",
+    ownTextModeHint: "Paste a trusted source and the new draft to review",
+    useOwnText: "Use my text",
+    localeScope: "Currently optimized for common Chinese and English number, date, currency, and unit formats.",
     source: "Source",
     sourceHint: "The text whose facts must survive",
     revision: "Rewrite",
@@ -148,14 +188,14 @@ const copy = {
     placeholderRevision: "Paste the rewritten text here…",
     loadExample: "Load example",
     clear: "Clear",
-    compare: "Check the facts",
+    compare: "Compare both texts",
     comparing: "Checking…",
     compareFailed:
       "The check did not finish. Try again; the previous result is unchanged.",
     compareHint: "Creates a fixed result. Recheck after editing either text.",
     resultsOutdated:
       "The inputs changed. These are still the previous results; recheck before exporting.",
-    resultTitle: "Fact check",
+    resultTitle: "Comparison results",
     resultIntro: "Review flagged items before accepting the rewrite.",
     resultReady: (automatic: number, review: number, added: number, required: number) =>
       `Check complete: ${automatic} automatic facts, ${review} for review, ${added} new, and ${required} must-preserve issues.`,
@@ -164,12 +204,14 @@ const copy = {
     copied: "Report copied",
     copyFailed: "Copy failed. Please download the report instead.",
     downloaded: "Report downloaded",
-    scanned: "Automatic facts",
+    scanned: "Extracted exact facts",
     preserved: "Preserved",
     review: "Review",
     reviewItems: "Human review",
     added: "New in rewrite",
-    score: "Auto retention",
+    score: "Extracted-fact retention",
+    retentionDisclaimer:
+      "Retention includes extracted exact facts only; it does not represent full-document factual accuracy or semantic completeness.",
     requiredResults: "Must-preserve checks",
     requiredConfigured: "Configured",
     requiredCheckable: "Checkable",
@@ -191,6 +233,14 @@ const copy = {
     manualConfirmed: "Confirmed issue",
     manualAccepted: "Acceptable rewrite",
     manualIgnored: "Ignored",
+    reviewDraft: "Review draft",
+    reviewNeedsChanges: "Needs changes",
+    reviewAcceptable: "Review complete · no confirmed issues",
+    reviewNoFindings: "No findings require human review",
+    reviewOutdated: "Results outdated",
+    reviewOutcomeLabel: "Current review status",
+    resetReviewConfirm: (count: number) =>
+      `${count} human review decision${count === 1 ? "" : "s"} will be cleared if you continue.`,
     manualDecision: "Human decision",
     manualDecisionGroup: "Choose a human decision",
     previousPage: "Previous",
@@ -211,7 +261,7 @@ const copy = {
     revisionContext: "Rewrite context",
     comparisonContext: "View source and rewrite context",
     disclaimer:
-      "KeepFacts currently checks exact, extractable facts only. It does not judge whether the full meaning is correct. Yellow items need human review.",
+      "KeepFacts compares exact, extractable facts between two texts. It does not verify truth or judge the full meaning. Yellow items need human review.",
     footerPrefix: "Experimental",
     footer: "Deterministic rules · No tracking",
     homeLabel: "KeepFacts home",
@@ -391,19 +441,26 @@ function ResultCard({
 }
 
 export default function Home() {
-  const [locale, setLocale] = useState<Locale>("zh");
-  const [source, setSource] = useState(examples.zh.source);
-  const [revision, setRevision] = useState(examples.zh.revision);
-  const [required, setRequired] = useState(examples.zh.required);
+  const [initialLocale] = useState<Locale>(detectInitialLocale);
+  const initialExample = examples[initialLocale];
+  const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [source, setSource] = useState(initialExample.source);
+  const [revision, setRevision] = useState(initialExample.revision);
+  const [required, setRequired] = useState(initialExample.required);
   const [checkedInput, setCheckedInput] = useState({
-    source: examples.zh.source,
-    revision: examples.zh.revision,
-    required: examples.zh.required,
+    source: initialExample.source,
+    revision: initialExample.revision,
+    required: initialExample.required,
   });
   const [comparison, setComparison] = useState(() =>
-    compareFacts(examples.zh.source, examples.zh.revision, examples.zh.required),
+    compareFacts(
+      initialExample.source,
+      initialExample.revision,
+      initialExample.required,
+    ),
   );
   const [hasRun, setHasRun] = useState(true);
+  const [isExampleMode, setIsExampleMode] = useState(true);
   const [filter, setFilter] = useState<Filter>("actionable");
   const [reviewDecisions, setReviewDecisions] = useState<ReviewDecisions>({});
   const [resultPage, setResultPage] = useState(1);
@@ -413,11 +470,13 @@ export default function Home() {
   const [comparisonError, setComparisonError] = useState("");
   const [busy, setBusy] = useState(false);
   const [focusResultsAfterRun, setFocusResultsAfterRun] = useState(false);
+  const [focusSourceAfterReset, setFocusSourceAfterReset] = useState(false);
   const [requiredNotInSourceCount, setRequiredNotInSourceCount] = useState(() =>
-    countRequiredNotInSource(examples.zh.source, examples.zh.required),
+    countRequiredNotInSource(initialExample.source, initialExample.required),
   );
   const reportFeedbackTimer = useRef<number | undefined>(undefined);
   const resultsHeading = useRef<HTMLHeadingElement | null>(null);
+  const sourceInput = useRef<HTMLTextAreaElement | null>(null);
   const automaticResultsHeading = useRef<HTMLHeadingElement | null>(null);
   const requiredResultsHeading = useRef<HTMLHeadingElement | null>(null);
   const localeRef = useRef(locale);
@@ -460,6 +519,13 @@ export default function Home() {
     setFocusResultsAfterRun(false);
   }, [focusResultsAfterRun, hasRun]);
 
+  useEffect(() => {
+    if (!focusSourceAfterReset) return;
+    sourceInput.current?.focus({ preventScroll: true });
+    sourceInput.current?.scrollIntoView({ behavior: "auto", block: "center" });
+    setFocusSourceAfterReset(false);
+  }, [focusSourceAfterReset]);
+
   const total = comparison.sourceFacts.length;
   const retention = total
     ? Math.round((comparison.preservedCount / total) * 100)
@@ -496,10 +562,28 @@ export default function Home() {
   ) => {
     if (workerRef.current) cancelPendingComparison();
     setComparisonError("");
+    setIsExampleMode(false);
     setter(value);
   };
 
+  const confirmReviewReset = () => {
+    const decisionCount = Object.keys(reviewDecisions).length;
+    return (
+      decisionCount === 0 ||
+      window.confirm(t.resetReviewConfirm(decisionCount))
+    );
+  };
+
+  const changeLocale = () => {
+    const nextLocale = locale === "zh" ? "en" : "zh";
+    const url = new URL(window.location.href);
+    url.searchParams.set("lang", nextLocale);
+    window.history.replaceState(window.history.state, "", url);
+    setLocale(nextLocale);
+  };
+
   const loadExample = () => {
+    if (!confirmReviewReset()) return;
     cancelPendingComparison();
     const example = examples[locale];
     setSource(example.source);
@@ -511,6 +595,7 @@ export default function Home() {
     );
     setReviewDecisions({});
     setHasRun(true);
+    setIsExampleMode(true);
     setFilter("actionable");
     setResultPage(1);
     setRequiredPage(1);
@@ -520,6 +605,7 @@ export default function Home() {
   };
 
   const clearAll = () => {
+    if (!confirmReviewReset()) return;
     cancelPendingComparison();
     setSource("");
     setRevision("");
@@ -528,6 +614,7 @@ export default function Home() {
     setComparison(compareFacts("", "", ""));
     setReviewDecisions({});
     setHasRun(false);
+    setIsExampleMode(false);
     setFilter("all");
     setResultPage(1);
     setRequiredPage(1);
@@ -535,8 +622,43 @@ export default function Home() {
     setComparisonFeedback("");
   };
 
+  const startOwnText = () => {
+    if (!isExampleMode) {
+      setFocusSourceAfterReset(true);
+      return;
+    }
+    if (!confirmReviewReset()) return;
+    cancelPendingComparison();
+    setSource("");
+    setRevision("");
+    setRequired("");
+    setCheckedInput({ source: "", revision: "", required: "" });
+    setComparison(compareFacts("", "", ""));
+    setReviewDecisions({});
+    setHasRun(false);
+    setIsExampleMode(false);
+    setFilter("all");
+    setResultPage(1);
+    setRequiredPage(1);
+    setComparisonError("");
+    setComparisonFeedback("");
+    setFocusSourceAfterReset(true);
+  };
+
+  const viewExampleResults = () => {
+    resultsHeading.current?.focus({ preventScroll: true });
+    document
+      .getElementById("results")
+      ?.scrollIntoView({ behavior: "auto", block: "start" });
+  };
+
   const runComparison = () => {
     if (busy || pendingRef.current) return;
+    if (hasRun && !resultsOutdated) {
+      setFocusResultsAfterRun(true);
+      return;
+    }
+    if (!confirmReviewReset()) return;
     const input = { source, revision, required };
     const requestId = ++requestSequence.current;
     let worker: Worker;
@@ -649,6 +771,16 @@ export default function Home() {
   };
 
   const manualSummary = summarizeReviews(comparison, reviewDecisions);
+  const reviewOutcome = getReviewOutcome(manualSummary);
+  const currentReviewState = resultsOutdated ? "outdated" : reviewOutcome;
+  const reviewOutcomeText = resultsOutdated
+    ? t.reviewOutdated
+    : ({
+        "no-review": t.reviewNoFindings,
+        draft: t.reviewDraft,
+        "needs-changes": t.reviewNeedsChanges,
+        acceptable: t.reviewAcceptable,
+      }[reviewOutcome]);
   const focusPageHeading = (heading: HTMLHeadingElement | null) => {
     window.requestAnimationFrame(() => {
       heading?.focus({ preventScroll: true });
@@ -758,7 +890,7 @@ export default function Home() {
           <button
             className="language-button"
             type="button"
-            onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+            onClick={changeLocale}
           >
             {t.changeLanguage}
           </button>
@@ -773,9 +905,53 @@ export default function Home() {
           <span>{t.titleB}</span>
         </h1>
         <p className="hero-copy">{t.intro}</p>
+        <div className="hero-actions">
+          <button
+            className="hero-primary-action"
+            type="button"
+            onClick={startOwnText}
+          >
+            {t.checkOwnText}
+          </button>
+          {isExampleMode && hasRun ? (
+            <button
+              className="hero-secondary-action"
+              type="button"
+              onClick={viewExampleResults}
+            >
+              {t.viewExample}
+            </button>
+          ) : null}
+        </div>
+        <p className="locale-scope">{t.localeScope}</p>
+        <p className="mobile-privacy-copy" data-testid="privacy-copy">
+          <span className="privacy-dot" aria-hidden="true" />
+          {t.mobilePrivacy}
+        </p>
       </section>
 
       <section className="checker" aria-label={t.eyebrow}>
+        <section
+          className="input-mode"
+          data-testid="input-mode"
+          aria-label={isExampleMode ? t.exampleMode : t.ownTextMode}
+        >
+          <div>
+            <strong>{isExampleMode ? t.exampleMode : t.ownTextMode}</strong>
+            <span>
+              {isExampleMode ? t.exampleModeHint : t.ownTextModeHint}
+            </span>
+          </div>
+          {isExampleMode ? (
+            <button type="button" onClick={startOwnText}>
+              {t.useOwnText}
+            </button>
+          ) : (
+            <button type="button" onClick={loadExample}>
+              {t.loadExample}
+            </button>
+          )}
+        </section>
         <div className="editor-grid">
           <article className="editor-card">
             <div className="editor-header">
@@ -789,6 +965,7 @@ export default function Home() {
               </span>
             </div>
             <textarea
+              ref={sourceInput}
               aria-label={t.source}
               value={source}
               onChange={(event) => updateInput(setSource, event.target.value)}
@@ -839,10 +1016,19 @@ export default function Home() {
 
         <div className="action-bar">
           <div className="secondary-actions">
-            <button type="button" className="text-button" onClick={loadExample}>
-              {t.loadExample}
-            </button>
-            <span aria-hidden="true">·</span>
+            {isExampleMode ? (
+              <>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={loadExample}
+                  disabled
+                >
+                  {t.loadExample}
+                </button>
+                <span aria-hidden="true">·</span>
+              </>
+            ) : null}
             <button type="button" className="text-button" onClick={clearAll}>
               {t.clear}
             </button>
@@ -903,13 +1089,28 @@ export default function Home() {
               </span>
               <div
                 className="score-ring"
-                aria-label={`${t.score} ${retentionLabel}`}
+                role={retention === null ? "status" : "meter"}
+                aria-valuemin={retention === null ? undefined : 0}
+                aria-valuemax={retention === null ? undefined : 100}
+                aria-valuenow={retention ?? undefined}
+                aria-describedby="retention-disclaimer"
+                aria-label={
+                  retention === null ? `${t.score} ${retentionLabel}` : t.score
+                }
               >
                 <span>{retentionLabel}</span>
                 <small>{t.score}</small>
               </div>
             </div>
           </div>
+
+          <p
+            className="retention-disclaimer"
+            id="retention-disclaimer"
+            data-testid="retention-disclaimer"
+          >
+            {t.retentionDisclaimer}
+          </p>
 
           {resultsOutdated ? (
             <div className="stale-notice" role="status">
@@ -946,9 +1147,20 @@ export default function Home() {
                   <h3 id="manual-review-title">{t.manualReview}</h3>
                   <p>{t.manualReviewHint}</p>
                 </div>
-                <strong aria-live="polite" aria-atomic="true">
-                  {manualSummary.total - manualSummary.pending}/{manualSummary.total}
-                </strong>
+                <div className="manual-review-status">
+                  <strong aria-live="polite" aria-atomic="true">
+                    {manualSummary.total - manualSummary.pending}/{manualSummary.total}
+                  </strong>
+                  <span
+                    className={`review-outcome review-outcome-${currentReviewState}`}
+                    data-review-state={currentReviewState}
+                    data-testid="review-outcome"
+                    role="status"
+                    aria-label={`${t.reviewOutcomeLabel}: ${reviewOutcomeText}`}
+                  >
+                    {reviewOutcomeText}
+                  </span>
+                </div>
               </div>
               <div className="manual-summary-grid">
                 <div className="summary-card summary-neutral">

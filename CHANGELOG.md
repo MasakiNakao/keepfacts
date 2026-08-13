@@ -2,6 +2,33 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.2.1] - 2026-08-13
+
+### Changed
+
+- Choose the initial interface and matching example from `?lang=zh|en` or the
+  browser language, without changing user text when the language is switched.
+- Distinguish example mode from the user's own text and add direct actions for
+  starting a private comparison or viewing the example results.
+- Show a single derived human-review outcome—draft, needs changes, or
+  review complete with no confirmed issues—in both the interface and exported
+  report.
+- Confirm before an action discards completed human decisions and keep the
+  current inputs, results, and decisions when the user cancels.
+- Keep a concise local-processing notice visible on mobile and stop reusing an
+  unknown local preview server during browser tests.
+- Position KeepFacts as a local exact-fact preservation checker for AI
+  rewrites, summaries, and translations, rather than a service that verifies
+  whether claims are true.
+- Define the displayed retention percentage as extracted-fact retention: its
+  denominator contains only source facts recognized by the supported rules and
+  does not represent full-document accuracy or extraction coverage.
+- Surface that recognition is currently optimized for common Chinese and
+  English formats, while retaining the v0.2 human-review and Markdown-report
+  workflow.
+- Align the English and Simplified Chinese documentation with these product
+  boundaries and the public regression-gate methodology.
+
 ## [0.2.0] - 2026-08-13
 
 ### Added

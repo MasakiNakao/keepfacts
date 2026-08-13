@@ -1,5 +1,5 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
@@ -23,8 +23,226 @@ async function setComparison(
   await page.getByRole("textbox", { name: "必须保留的内容" }).fill(required);
 }
 
+async function createThreeWayReview(page: Page) {
+  await setComparison(
+    page,
+    "Alpha has 100 users. Keep Northstar.",
+    "Alpha has 80 users. Launch on 2026-09-15.",
+    "Northstar",
+  );
+  await page.getByRole("button", { name: /对照两版/ }).click();
+  await expect(page.getByRole("heading", { name: "核对结果" })).toBeFocused();
+
+  return {
+    automatic: page.locator(".automatic-results .result-review"),
+    required: page.locator(".required-result-list .result-review"),
+    added: page.locator(".automatic-results .result-added"),
+  };
+}
+
+async function answerConfirmation(
+  page: Page,
+  action: Locator,
+  accept: boolean,
+) {
+  const dialogPromise = page.waitForEvent("dialog");
+  const clickPromise = action.click();
+  const dialog = await dialogPromise;
+  expect(dialog.type()).toBe("confirm");
+  expect(dialog.message()).toBe(
+    "已有 1 条人工结论。继续操作将清除这些结论，是否继续？",
+  );
+  if (accept) await dialog.accept();
+  else await dialog.dismiss();
+  await clickPromise;
+}
+
 test.beforeEach(async ({ page }) => {
-  await page.goto("./");
+  // Pin existing Chinese-language contracts. Language negotiation itself is
+  // covered separately and must not make the rest of the suite depend on the
+  // machine running Playwright.
+  await page.goto("./?lang=zh");
+});
+
+test.describe("language negotiation", () => {
+  test.use({ locale: "en-US" });
+
+  test("honors URL language and otherwise follows the browser language", async ({
+    page,
+  }) => {
+    await page.goto("./?lang=zh");
+    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+    await expect(page.getByRole("textbox", { name: "原文" })).toBeVisible();
+
+    await page.goto("./?lang=en");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page).toHaveTitle(
+      "KeepFacts — Change the wording, not the facts",
+    );
+    await expect(page.getByRole("textbox", { name: "Source" })).toBeVisible();
+
+    await page.goto("./");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.getByRole("textbox", { name: "Source" })).toBeVisible();
+  });
+});
+
+test.describe("Chinese browser language", () => {
+  test.use({ locale: "zh-CN" });
+
+  test("uses Chinese without a URL override", async ({ page }) => {
+    await page.goto("./");
+    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+    await expect(page.getByRole("textbox", { name: "原文" })).toBeVisible();
+  });
+});
+
+test("distinguishes the example from the user's own text", async ({ page }) => {
+  const mode = page.getByRole("region", { name: "示例模式" });
+  await expect(mode).toContainText("当前显示示例内容和示例结果。");
+  await expect(page.getByRole("heading", { name: "核对结果" })).toBeVisible();
+
+  await mode
+    .getByRole("button", { name: "使用我的文本", exact: true })
+    .click();
+  await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue("");
+  await expect(page.getByRole("textbox", { name: "改写稿" })).toHaveValue("");
+  await expect(page.getByRole("heading", { name: "核对结果" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /对照两版/ }),
+  ).toBeDisabled();
+});
+
+test("qualifies retention as extracted-fact coverage", async ({ page }) => {
+  await expect(
+    page.getByRole("meter", { name: /^已提取事实保留率/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("只统计规则识别到的硬事实，不代表全文事实正确。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("uses a non-numeric status when no facts are extracted", async ({ page }) => {
+  await setComparison(page, "Alpha text only.", "Alpha text only.");
+  await page.getByRole("button", { name: /对照两版/ }).click();
+  await expect(
+    page.getByRole("status", { name: /^已提取事实保留率 —$/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("meter", { name: /^已提取事实保留率/ })).toHaveCount(
+    0,
+  );
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("offers unique hero actions for own text and the example", async ({
+  page,
+}) => {
+  await expect(
+    page.getByRole("button", { name: "核对我的文本", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "查看示例结果", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "使用我的文本", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "载入示例", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "载入示例", exact: true }),
+  ).toBeDisabled();
+});
+
+test("shows draft, needs-changes, and completed review outcomes", async ({
+  page,
+}) => {
+  const findings = await createThreeWayReview(page);
+  const manual = page.getByRole("region", { name: "人工审阅进度" });
+
+  await expect(manual.locator('[data-review-state="draft"]')).toHaveText(
+    "审阅草稿",
+  );
+  await findings.automatic
+    .getByRole("radio", { name: "确认需处理" })
+    .check();
+  await findings.required.getByRole("radio", { name: "改写合理" }).check();
+  await findings.added.getByRole("radio", { name: "已忽略" }).check();
+  await expect(
+    manual.locator('[data-review-state="needs-changes"]'),
+  ).toHaveText("需要修改");
+
+  await findings.automatic.getByRole("radio", { name: "改写合理" }).check();
+  await expect(manual.locator('[data-review-state="acceptable"]')).toHaveText(
+    "审阅完成 · 无确认问题",
+  );
+});
+
+test("confirms destructive example and clear actions after a decision", async ({
+  page,
+}) => {
+  let findings = await createThreeWayReview(page);
+  await findings.automatic
+    .getByRole("radio", { name: "确认需处理" })
+    .check();
+  const customSource = await page
+    .getByRole("textbox", { name: "原文" })
+    .inputValue();
+
+  const loadExample = page
+    .getByRole("region", { name: "我的文本" })
+    .getByRole("button", { name: "载入示例", exact: true });
+  await answerConfirmation(page, loadExample, false);
+  await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue(
+    customSource,
+  );
+  await expect(
+    findings.automatic.getByRole("radio", { name: "确认需处理" }),
+  ).toBeChecked();
+
+  await answerConfirmation(page, loadExample, true);
+  await expect(page.getByRole("region", { name: "示例模式" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue(
+    /星河工作室/,
+  );
+  await expect(
+    page
+      .getByRole("region", { name: "人工审阅进度" })
+      .locator('[data-review-state="draft"]'),
+  ).toHaveText("审阅草稿");
+
+  findings = {
+    automatic: page.locator(".automatic-results .result-review").first(),
+    required: page.locator(".required-result-list .result-review"),
+    added: page.locator(".automatic-results .result-added"),
+  };
+  await findings.automatic
+    .getByRole("radio", { name: "确认需处理" })
+    .check();
+
+  const clear = page.getByRole("button", { name: "清空", exact: true });
+  await answerConfirmation(page, clear, false);
+  await expect(
+    findings.automatic.getByRole("radio", { name: "确认需处理" }),
+  ).toBeChecked();
+  await expect(page.getByRole("heading", { name: "核对结果" })).toBeVisible();
+
+  await answerConfirmation(page, clear, true);
+  await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue("");
+  await expect(page.getByRole("textbox", { name: "改写稿" })).toHaveValue("");
+  await expect(page.getByRole("heading", { name: "核对结果" })).toHaveCount(0);
+});
+
+test("shows a concise privacy promise on mobile", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile-chromium", "mobile copy contract");
+
+  await expect(page.getByTestId("privacy-copy")).toHaveText(
+    "本地处理 · 文本不会上传",
+  );
 });
 
 test("is accessible and explains normalized matches", async ({ page }) => {
@@ -81,7 +299,7 @@ test("completes human review and exports decisions without changing auto counts"
     "Alpha has 80 users. Launch on 2026-09-15.",
     "Northstar",
   );
-  await page.getByRole("button", { name: "开始核对" }).click();
+  await page.getByRole("button", { name: /对照两版/ }).click();
   await expect(page.getByRole("heading", { name: "核对结果" })).toBeFocused();
 
   const manualReview = page.getByRole("region", { name: "人工审阅进度" });
@@ -213,7 +431,7 @@ test("does not overflow at either configured viewport", async ({ page }) => {
     "URL https://example.com/a/very/long/path/that/must/remain?with=query&and=more",
     "https://example.com/a/very/long/path/that/must/remain?with=query&and=more",
   );
-  await page.getByRole("button", { name: "开始核对" }).click();
+  await page.getByRole("button", { name: /对照两版/ }).click();
   await expect.poll(() =>
     page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
   ).toBe(true);
@@ -226,7 +444,7 @@ test("paginates large result sets and moves focus to the new page", async ({ pag
   ).join("\n");
   await page.getByRole("textbox", { name: "原文" }).fill(text);
   await page.getByRole("textbox", { name: "改写稿" }).fill(text);
-  await page.getByRole("button", { name: "开始核对" }).click();
+  await page.getByRole("button", { name: /对照两版/ }).click();
   await expect(page.getByRole("heading", { name: "核对结果" })).toBeFocused();
   await page.getByRole("button", { name: /全部/ }).click();
 
@@ -245,7 +463,7 @@ test("paginates large result sets and moves focus to the new page", async ({ pag
   });
   const requiredText = requiredItems.join(". ");
   await setComparison(page, requiredText, requiredText, requiredItems.join("\n"));
-  await page.getByRole("button", { name: "开始核对" }).click();
+  await page.getByRole("button", { name: /对照两版/ }).click();
   const requiredPagination = page.getByRole("navigation", {
     name: "必须保留检查",
   });

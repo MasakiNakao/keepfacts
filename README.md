@@ -9,29 +9,51 @@
 
 **Change the wording, not the facts.**
 
-KeepFacts is a small, privacy-first checker for facts that disappear or change during AI rewriting, summarization, and translation. Paste the source and the rewrite, then review dates, money, percentages, quantities, versions, links, emails, and other exact facts side by side.
+KeepFacts is a small, privacy-first **exact-fact preservation checker** for AI
+rewrites, summaries, and translations. Compare a trusted source with the new
+draft, then review dates, money, percentages, quantities, versions, links,
+emails, and other extractable items side by side.
+
+KeepFacts does not look up claims or decide whether they are true. It checks
+whether exact items it can recognize were preserved, changed, omitted, or added
+between two texts. Recognition is currently optimized for common Chinese and
+English formats.
 
 All analysis runs locally in the browser. No text is uploaded, no account is required, and no AI API key is needed.
 
-[![KeepFacts v0.2 interface showing fact comparison and human review decisions](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
+[![KeepFacts v0.2.1 interface showing exact-fact comparison and human review decisions](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
 
 ## Try it in 30 seconds
 
 1. Open the [live demo](https://masakinakao.github.io/keepfacts/).
 2. Paste the original text on the left and the rewrite on the right.
 3. Optionally add one must-preserve name or phrase per line.
-4. Select **Check the facts** to create a fixed result. Mark findings as **Confirmed issue**, **Acceptable rewrite**, or **Ignored**, then copy or download the Markdown report. Recheck after editing either text.
+4. Select **Compare both texts** to create a fixed result. Mark findings as **Confirmed issue**, **Acceptable rewrite**, or **Ignored**, then copy or download the Markdown report. Recheck after editing either text.
 
 ## Why KeepFacts?
 
-AI writing tools can produce fluent text while silently changing a date, dropping a URL, or turning 100 users into 80. KeepFacts provides a deterministic check before you accept the rewrite.
+AI writing tools can produce fluent text while silently changing a date,
+dropping a URL, or turning 100 users into 80. KeepFacts provides a deterministic
+pre-publication comparison before you accept the rewrite. The source text is
+the reference; KeepFacts is not a truth-verification service.
 
 It is intentionally narrow:
 
 - it finds exact, extractable facts;
 - it explains every result;
 - it flags uncertainty for human review;
-- it does not claim to verify the meaning of the full document.
+- it does not claim to verify truth or the meaning of the full document;
+- its retention percentage covers only facts extracted from the source, not
+  every factual statement the document may contain.
+
+## v0.2.1 scope
+
+v0.2.1 keeps the v0.2 workflow—must-preserve terms, per-finding human
+decisions, review progress, pagination, and Markdown report export—while making
+the product boundary explicit. Use it to check whether recognized exact facts
+survive an AI transformation. A 100% extracted-fact retention result does not
+mean that every claim is true, every fact was recognized, or the full meaning
+was preserved.
 
 ## Current checks
 
@@ -44,7 +66,8 @@ It is intentionally narrow:
 - Duplicate and reordered facts using context-aware, one-to-one matching
 - Precision-safe signed numbers plus common Chinese, English, and full-width
   formatting equivalence
-- User-defined names, terms, and phrases that must be preserved, reported separately from automatic fact retention
+- User-defined names, terms, and phrases that must be preserved, reported
+  separately from extracted-fact retention
 - Per-finding human decisions and pending-review progress across automatic, must-preserve, and newly added findings
 - Traceable Markdown reports with source/rewrite context, app version, and build commit
 - Fifty-item pagination for large automatic and must-preserve result sets
@@ -97,7 +120,13 @@ aggregate counts. See [VALIDATION.md](VALIDATION.md) and
 
 KeepFacts extracts facts in priority order so nested numbers are not counted twice. It then normalizes safe formatting differences—for example, `¥30,000` and `3万元`—using exact decimal strings rather than floating-point arithmetic. Context-aware, one-to-one matching keeps repeated or reordered values attached to the most likely subject. Unmatched facts are shown as missing, possibly changed, or newly introduced.
 
-No model is used in this process. Requested comparisons run in a local Web Worker so large checks do not block text editing. Context features are cached once per fact before one-to-one assignment, and result cards are paginated for large documents. Results remain reproducible, but deliberately limited to facts the rules can identify.
+No model is used in this process. Requested comparisons run in a local Web
+Worker so large checks do not block text editing. Context features are cached
+once per fact before one-to-one assignment, and result cards are paginated for
+large documents. Results remain reproducible, but deliberately limited to facts
+the rules can identify. The extracted-fact retention percentage is preserved
+matches divided by extracted source facts; it is not an extraction-recall or
+full-document accuracy score.
 
 Human decisions are a separate review layer: they never rewrite automatic counts or retention. They remain in page memory only and are included when you copy or download the report; KeepFacts does not persist source text, rewrite text, context, or review decisions in Web Storage.
 
@@ -114,7 +143,11 @@ Bug reports and small, well-scoped recognizer improvements are welcome. When add
 
 ## Privacy and limitations
 
-KeepFacts performs deterministic checks in your browser and contains no tracking code. It is an additional review aid, not a substitute for human review in legal, medical, financial, or other high-stakes work. See [SECURITY.md](SECURITY.md).
+KeepFacts performs deterministic checks in your browser and contains no
+tracking code. It compares supported exact facts between two texts; it does not
+verify claims against external evidence. It is an additional review aid, not a
+substitute for human review in legal, medical, financial, or other high-stakes
+work. See [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -1,6 +1,6 @@
 # KeepFacts evaluation
 
-KeepFacts v0.2 introduces an independent, deterministic evaluation layer for
+KeepFacts v0.2 introduces a separate, deterministic evaluation layer for
 automatic fact extraction and association. It complements the named regression
 cases in `tests/validation-cases.json`; it does not replace them.
 

@@ -18,6 +18,12 @@ export interface ReviewSummary {
   ignored: number;
 }
 
+export type ReviewOutcome =
+  | "no-review"
+  | "draft"
+  | "needs-changes"
+  | "acceptable";
+
 export function reviewDecisionKey(scope: ReviewScope, fact: Fact) {
   return `${scope}:${fact.id}`;
 }
@@ -66,4 +72,10 @@ export function summarizeReviews(
   }
 
   return summary;
+}
+
+export function getReviewOutcome(summary: ReviewSummary): ReviewOutcome {
+  if (summary.total === 0) return "no-review";
+  if (summary.pending > 0) return "draft";
+  return summary.confirmed > 0 ? "needs-changes" : "acceptable";
 }

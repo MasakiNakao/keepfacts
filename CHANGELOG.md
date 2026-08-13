@@ -2,6 +2,48 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.3.0] - 2026-08-13
+
+### Added
+
+- Bring automatic fact warnings, must-preserve anomalies, and facts introduced
+  only in the rewrite into one ordered human-review queue.
+- Add optional review notes and expected-fix instructions, limited to 500
+  UTF-16 code units per field.
+- Add a bilingual, checkbox-based fix list containing confirmed issues only;
+  it can be copied on its own and is also included in the full Markdown report.
+- Add explicit export and import of local, unencrypted `.keepfacts.json` session
+  files containing the editor text, last checked input, and human records. The
+  strict schema and limits are documented in
+  [`docs/session-format-v1.md`](docs/session-format-v1.md).
+
+### Changed
+
+- Migrate human records conservatively when a comparison is rerun: decisions
+  survive only an exact stable-key match in unchanged anchor text or a unique
+  identity match, and only while the evidence is unchanged. Changed evidence
+  returns the item to pending but may retain its note and expected fix;
+  ambiguous or unmatched records are never attached to a new finding silently.
+- Keep human decisions, notes, expected fixes, review outcomes, and fix-list
+  contents separate from deterministic machine counts and extracted-fact
+  retention.
+- Make session import validate the complete file locally, recompute any saved
+  comparison input with the current engine, and restore only review records
+  whose exact keys are still present.
+- Keep the v0.2.1 fact-recognition engine and public evaluation corpus unchanged;
+  v0.3.0 adds review and continuity tooling, not broader recognition or evidence
+  of improved accuracy.
+
+### Privacy
+
+- KeepFacts still does not automatically save or upload source text, rewrites,
+  must-preserve content, or human records. Reports and sessions are created only
+  when the user explicitly exports them.
+- Exported Markdown reports and `.keepfacts.json` sessions are unencrypted
+  plaintext and may contain sensitive text and human annotations. Browser
+  download folders, cloud-synced folders, backups, and similar software may
+  copy or synchronize those files outside KeepFacts.
+
 ## [0.2.1] - 2026-08-13
 
 ### Changed

@@ -1,9 +1,15 @@
 import type { ComparedFact, Fact, FactComparison, FactKind } from "./facts";
 import {
+  getFixList,
   getReviewOutcome,
+  normalizeReviewRecord,
   reviewDecisionKey,
   summarizeReviews,
+  type ReviewDecision,
   type ReviewDecisions,
+  type ReviewRecord,
+  type ReviewRecordInput,
+  type ReviewRecords,
   type ReviewScope,
 } from "./review.ts";
 
@@ -37,6 +43,13 @@ const labels: Record<
     manualIgnored: string;
     manualDecision: string;
     manualNote: string;
+    reviewerNote: string;
+    expectedFix: string;
+    unspecified: string;
+    fixList: string;
+    scopeSource: string;
+    scopeRequired: string;
+    scopeAdded: string;
     requiredCount: string;
     requiredCheckable: string;
     requiredMissing: string;
@@ -88,7 +101,15 @@ const labels: Record<
     manualAccepted: "改写合理",
     manualIgnored: "已忽略",
     manualDecision: "人工结论",
-    manualNote: "人工结论独立于自动统计，只存在当前页面，并写入本次导出的报告。",
+    manualNote:
+      "人工结论独立于自动统计，不会自动持久化；主动导出的报告或会话文件可能包含人工结论、备注和期望修复。",
+    reviewerNote: "备注",
+    expectedFix: "期望修复",
+    unspecified: "未指定",
+    fixList: "修复清单",
+    scopeSource: "自动事实",
+    scopeRequired: "必须保留",
+    scopeAdded: "改写新增",
     requiredCount: "必保项目",
     requiredCheckable: "可核对",
     requiredMissing: "改写缺失",
@@ -155,7 +176,14 @@ const labels: Record<
     manualIgnored: "Ignored",
     manualDecision: "Human decision",
     manualNote:
-      "Human decisions are separate from automatic metrics, remain only on the current page, and are included in this exported report.",
+      "Human review is separate from automatic metrics and is not persisted automatically; reports or session files you explicitly export may contain decisions, notes, and expected fixes.",
+    reviewerNote: "Note",
+    expectedFix: "Expected fix",
+    unspecified: "Not specified",
+    fixList: "Fix list",
+    scopeSource: "Automatic fact",
+    scopeRequired: "Must-preserve",
+    scopeAdded: "New in rewrite",
     requiredCount: "Required items",
     requiredCheckable: "Checkable",
     requiredMissing: "Missing from rewrite",
@@ -209,44 +237,82 @@ function inlineCode(value: string) {
   return `${fence}${padded}${fence}`;
 }
 
+function safeMarkdownText(value: string) {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/\\/gu, "\\\\")
+    .replace(/([`*_[\]{}()#+\-.!|])/gu, "\\$1")
+    .replace(/\t/gu, "    ")
+    .replace(/\n/gu, "<br>");
+}
+
+function recordAt(records: ReviewRecordInput, key: string) {
+  const value = (
+    records as Partial<Record<string, ReviewRecord | ReviewDecision>>
+  )[key];
+  return normalizeReviewRecord(
+    typeof value === "string" ? { decision: value } : value,
+  );
+}
+
+function factSides(fact: Fact | ComparedFact, added: boolean) {
+  const compared = fact as ComparedFact;
+  return {
+    sourceFact: added
+      ? undefined
+      : compared.sourceMatch ??
+        (compared.reviewReason === "not-in-source" ? undefined : fact),
+    rewriteFact: added
+      ? fact
+      : compared.matched ?? compared.possibleMatch,
+  };
+}
+
+function findingNote(
+  fact: Fact | ComparedFact,
+  locale: ReportLocale,
+  added: boolean,
+) {
+  const t = labels[locale];
+  const compared = fact as ComparedFact;
+  if (added) return t.newFact;
+  if (compared.status !== "review") return t.preserved;
+  if (compared.reviewReason === "invalid") return t.invalid;
+  if (compared.reviewReason === "not-in-source") {
+    return compared.matched ? t.notInSourceAdded : t.notInSource;
+  }
+  if (compared.possibleMatch) {
+    return `${t.changed} ${inlineCode(compared.possibleMatch.raw)}`;
+  }
+  return t.missing;
+}
+
 function factLine(
   fact: Fact | ComparedFact,
   locale: ReportLocale,
   options: {
     added?: boolean;
     scope?: ReviewScope;
-    reviewDecisions?: ReviewDecisions;
+    reviewRecords?: ReviewRecordInput;
   } = {},
 ) {
   const t = labels[locale];
-  const { added = false, scope, reviewDecisions = {} } = options;
+  const { added = false, scope, reviewRecords = {} } = options;
   const compared = fact as ComparedFact;
-  let note = added ? t.newFact : t.preserved;
-
-  if (!added && compared.status === "review") {
-    if (compared.reviewReason === "invalid") note = t.invalid;
-    else if (compared.reviewReason === "not-in-source") {
-      note = compared.matched ? t.notInSourceAdded : t.notInSource;
-    }
-    else if (compared.possibleMatch) {
-      note = `${t.changed} ${inlineCode(compared.possibleMatch.raw)}`;
-    } else note = t.missing;
-  }
-
-  const sourceFact = added
-    ? undefined
-    : compared.sourceMatch ??
-      (compared.reviewReason === "not-in-source" ? undefined : fact);
-  const rewriteFact = added
-    ? fact
-    : compared.matched ?? compared.possibleMatch;
+  const note = findingNote(fact, locale, added);
+  const { sourceFact, rewriteFact } = factSides(fact, added);
   const detail = (label: string, value?: string) =>
     `    - **${label}:** ${value ? inlineCode(value) : t.notFound}`;
+  const annotation = (label: string, value?: string, fallback = t.none) =>
+    `    - **${label}:** ${value ? safeMarkdownText(value) : fallback}`;
   const reviewable = added || (!added && compared.status === "review");
-  const decision =
+  const record =
     reviewable && scope
-      ? reviewDecisions[reviewDecisionKey(scope, fact)]
+      ? recordAt(reviewRecords, reviewDecisionKey(scope, fact))
       : undefined;
+  const decision = record?.decision;
   const decisionLabel = decision
     ? {
         confirmed: t.manualConfirmed,
@@ -258,6 +324,12 @@ function factLine(
   return [
     `- **${t.kinds[fact.kind]}** ${inlineCode(fact.raw)} — ${note}`,
     ...(reviewable ? [detail(t.manualDecision, decisionLabel)] : []),
+    ...(reviewable
+      ? [
+          annotation(t.reviewerNote, record?.note),
+          annotation(t.expectedFix, record?.expectedFix, t.unspecified),
+        ]
+      : []),
     detail(t.sourceValue, sourceFact?.raw),
     detail(t.rewriteValue, rewriteFact?.raw),
     detail(t.sourceContext, sourceFact?.context),
@@ -293,7 +365,7 @@ function section(
   options: {
     added?: boolean;
     scope?: ReviewScope;
-    reviewDecisions?: ReviewDecisions;
+    reviewRecords?: ReviewRecordInput;
   } = {},
 ) {
   const t = labels[locale];
@@ -301,6 +373,43 @@ function section(
     ? facts.flatMap((fact) => factLine(fact, locale, options))
     : [`- ${t.none}`];
   return [`## ${title}`, "", ...lines, ""].join("\n");
+}
+
+export function buildFixListMarkdown(
+  comparison: FactComparison,
+  locale: ReportLocale,
+  records: ReviewRecordInput,
+) {
+  const t = labels[locale];
+  const scopeLabels: Record<ReviewScope, string> = {
+    source: t.scopeSource,
+    required: t.scopeRequired,
+    added: t.scopeAdded,
+  };
+  const fixes = getFixList(comparison, records);
+  const lines = fixes.length
+    ? fixes.flatMap(({ fact, scope, record }) => {
+        const added = scope === "added";
+        const { sourceFact, rewriteFact } = factSides(fact, added);
+        const detail = (label: string, value?: string) =>
+          `    - **${label}:** ${value ? inlineCode(value) : t.notFound}`;
+        const annotation = (
+          label: string,
+          value?: string,
+          fallback = t.none,
+        ) => `    - **${label}:** ${value ? safeMarkdownText(value) : fallback}`;
+        return [
+          `- [ ] **${scopeLabels[scope]} · ${t.kinds[fact.kind]}** ${inlineCode(fact.raw)} — ${findingNote(fact, locale, added)}`,
+          annotation(t.expectedFix, record.expectedFix, t.unspecified),
+          annotation(t.reviewerNote, record.note),
+          detail(t.sourceValue, sourceFact?.raw),
+          detail(t.rewriteValue, rewriteFact?.raw),
+          detail(t.sourceContext, sourceFact?.context),
+          detail(t.rewriteContext, rewriteFact?.context),
+        ];
+      })
+    : [`- ${t.none}`];
+  return [`## ${t.fixList}`, "", ...lines, ""].join("\n");
 }
 
 export function buildMarkdownReport(
@@ -313,6 +422,7 @@ export function buildMarkdownReport(
         appVersion?: string;
         commitSha?: string;
         reviewDecisions?: ReviewDecisions;
+        reviewRecords?: ReviewRecords;
       } = {},
 ) {
   const t = labels[locale];
@@ -320,8 +430,9 @@ export function buildMarkdownReport(
   const generatedAt = normalizedOptions.generatedAt ?? new Date();
   const appVersion = normalizedOptions.appVersion?.trim() || "unknown";
   const commitSha = normalizedOptions.commitSha?.trim() || "local";
-  const reviewDecisions = normalizedOptions.reviewDecisions ?? {};
-  const manual = summarizeReviews(comparison, reviewDecisions);
+  const reviewRecords: ReviewRecordInput =
+    normalizedOptions.reviewRecords ?? normalizedOptions.reviewDecisions ?? {};
+  const manual = summarizeReviews(comparison, reviewRecords);
   const manualOutcome = getReviewOutcome(manual);
   const manualStatus =
     manualOutcome === "draft"
@@ -364,9 +475,12 @@ export function buildMarkdownReport(
         "",
         section(t.requiredChecks, comparison.requiredFacts, locale, {
           scope: "required",
-          reviewDecisions,
+          reviewRecords,
         }),
       ]
+    : [];
+  const fixListSection = manual.confirmed
+    ? [buildFixListMarkdown(comparison, locale, reviewRecords)]
     : [];
   const manualSection = manual.total
     ? [
@@ -407,15 +521,16 @@ export function buildMarkdownReport(
     "",
     ...requiredSections,
     ...manualSection,
+    ...fixListSection,
     section(t.automaticReview, review, locale, {
       scope: "source",
-      reviewDecisions,
+      reviewRecords,
     }),
     section(t.automaticPreserved, preserved, locale),
     section(t.automaticAdded, comparison.addedFacts, locale, {
       added: true,
       scope: "added",
-      reviewDecisions,
+      reviewRecords,
     }),
     `> ${t.disclaimer}`,
     "",

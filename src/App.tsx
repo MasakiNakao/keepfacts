@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   compareFacts,
   countRequiredNotInSource,
@@ -6,15 +6,35 @@ import {
   type Fact,
   type FactKind,
 } from "./lib/facts";
-import { buildMarkdownReport, formatLocalDate } from "./lib/report";
 import {
+  buildFixListMarkdown,
+  buildMarkdownReport,
+  formatLocalDate,
+} from "./lib/report";
+import {
+  getFixList,
+  getNextPendingReviewKey,
+  getReviewItems,
   getReviewOutcome,
+  getReviewOrder,
+  migrateReviewRecords,
+  orderReviewQueue,
   reviewDecisionKey,
   summarizeReviews,
+  updateReviewRecord,
   type ReviewDecision,
-  type ReviewDecisions,
+  type ReviewRecord,
+  type ReviewRecords,
   type ReviewScope,
 } from "./lib/review";
+import {
+  KEEPFACTS_SESSION_MAX_BYTES,
+  KEEPFACTS_SESSION_SCHEMA_VERSION,
+  parseKeepFactsSession,
+  reconcileKeepFactsReviewRecords,
+  serializeKeepFactsSession,
+  type KeepFactsSessionV1,
+} from "./lib/session";
 import { APP_COMMIT_SHA, APP_VERSION } from "./version";
 import type {
   CompareInput,
@@ -87,6 +107,8 @@ const copy = {
     compare: "对照两版",
     comparing: "正在核对…",
     compareFailed: "核对未完成，请重试。上次结果已保留。",
+    compareLimitExceeded:
+      "每侧最多核对 1,000 项已提取事实，必保项最多 1,000 条。请拆分文本后重试；上次结果已保留。",
     compareHint: "点击后生成一份固定结果；修改内容后请重新核对",
     resultsOutdated: "输入内容已更改，以下仍是上次核对结果。请重新核对后再导出报告。",
     resultTitle: "核对结果",
@@ -102,6 +124,7 @@ const copy = {
     preserved: "已保留",
     review: "需确认",
     reviewItems: "人工审阅",
+    issuesAndAdditions: "异常与新增",
     added: "改写新增",
     score: "已提取事实保留率",
     retentionDisclaimer: "只统计规则识别到的硬事实，不代表全文事实正确。",
@@ -120,7 +143,7 @@ const copy = {
       `${label}筛选：当前显示 ${count} 项自动事实。`,
     manualReview: "人工审阅进度",
     manualReviewHint:
-      "人工结论不会改变自动统计，只保留在当前页面和本次导出的报告中。重新核对会重置。",
+      "三类异常集中处理；人工记录不会改变机器统计，重新核对时只保留证据仍可对应的记录。",
     manualTotal: "待审阅项目",
     manualPending: "待处理",
     manualConfirmed: "确认需处理",
@@ -133,9 +156,51 @@ const copy = {
     reviewOutdated: "结果已过期",
     reviewOutcomeLabel: "当前审阅状态",
     resetReviewConfirm: (count: number) =>
-      `已有 ${count} 条人工结论。继续操作将清除这些结论，是否继续？`,
+      `已有 ${count} 条人工审阅记录。继续操作将清除这些记录，是否继续？`,
     manualDecision: "人工结论",
     manualDecisionGroup: "选择人工结论",
+    reviewQueue: "人工审阅队列",
+    reviewToolbar: "审阅与导出操作",
+    scopeSource: "自动事实",
+    scopeRequired: "必保项",
+    scopeAdded: "改写新增",
+    nextPending: "下一条待处理",
+    copyFixList: "复制修复清单",
+    fixListCopied: "修复清单已复制",
+    fixListEmpty: "尚无确认需处理的项目",
+    note: "审阅备注",
+    expectedFix: "期望修复",
+    optional: "可选",
+    notePlaceholder: "补充判断依据或交接说明（最多 500 字）",
+    expectedFixPlaceholder: "说明希望如何修改新稿（最多 500 字）",
+    machineDetailsNote: "以下为机器明细；人工结论请在上方统一队列处理。",
+    remainingPending: (count: number) => `还剩 ${count} 项待处理。`,
+    movedToPending: (index: number, scope: string, raw: string) =>
+      `已移动到第 ${index} 条待处理：${scope} ${raw}。`,
+    migrationResult: (
+      retained: number,
+      reset: number,
+      dropped: number,
+      ambiguous: number,
+    ) =>
+      `重新核对完成：保留 ${retained} 条结论，${reset} 条因证据变化回到待处理${dropped ? `，${dropped} 条旧记录未迁移${ambiguous ? `（其中 ${ambiguous} 条匹配不明确）` : ""}` : ""}。`,
+    migrationDropConfirm: (dropped: number, ambiguous: number) =>
+      `本次重新核对有 ${dropped} 条旧人工记录无法安全迁移${ambiguous ? `，其中 ${ambiguous} 条存在多个可能对应项` : ""}。继续将采用新结果并移除这些旧记录；取消可保留上次结果和全部人工记录。是否继续？`,
+    migrationCancelled: "已取消采用新结果；上次结果和人工记录仍保留。",
+    exportSession: "导出会话",
+    importSession: "导入会话",
+    sessionPrivacy:
+      "会话文件包含完整原文、新稿、必保项和人工记录，是未加密明文；KeepFacts 不会自动保存或上传。",
+    exportSessionConfirm:
+      "导出的会话文件包含完整文本和人工记录，且未加密。拿到文件的人可以直接读取。是否继续导出？",
+    importSessionConfirm:
+      "导入将替换当前文本、结果和人工记录。已先在本地完成校验，是否继续？",
+    sessionExported: "会话文件已导出",
+    sessionExportFailed: "无法导出会话文件；当前内容未更改。",
+    sessionImported: (restored: number, dropped: number) =>
+      `会话已导入：恢复 ${restored} 条人工记录${dropped ? `，${dropped} 条未匹配` : ""}。`,
+    sessionImporting: "正在本地校验会话…",
+    sessionImportFailed: "无法导入该会话文件；当前内容未更改。",
     previousPage: "上一页",
     nextPage: "下一页",
     pageStatus: (page: number, pages: number, total: number) =>
@@ -192,6 +257,8 @@ const copy = {
     comparing: "Checking…",
     compareFailed:
       "The check did not finish. Try again; the previous result is unchanged.",
+    compareLimitExceeded:
+      "Each side supports up to 1,000 extracted facts and 1,000 must-preserve items. Split the text and try again; the previous result is unchanged.",
     compareHint: "Creates a fixed result. Recheck after editing either text.",
     resultsOutdated:
       "The inputs changed. These are still the previous results; recheck before exporting.",
@@ -208,6 +275,7 @@ const copy = {
     preserved: "Preserved",
     review: "Review",
     reviewItems: "Human review",
+    issuesAndAdditions: "Issues and additions",
     added: "New in rewrite",
     score: "Extracted-fact retention",
     retentionDisclaimer:
@@ -227,7 +295,7 @@ const copy = {
       `${label} filter: showing ${count} automatic fact${count === 1 ? "" : "s"}.`,
     manualReview: "Human review progress",
     manualReviewHint:
-      "Human decisions do not change automatic metrics. They remain only on this page and in this exported report, and reset after a new check.",
+      "Review all three finding scopes in one queue. Human records never change machine metrics and migrate only when evidence can be matched safely.",
     manualTotal: "Reviewable items",
     manualPending: "Pending",
     manualConfirmed: "Confirmed issue",
@@ -240,9 +308,53 @@ const copy = {
     reviewOutdated: "Results outdated",
     reviewOutcomeLabel: "Current review status",
     resetReviewConfirm: (count: number) =>
-      `${count} human review decision${count === 1 ? "" : "s"} will be cleared if you continue.`,
+      `${count} human review record${count === 1 ? "" : "s"} will be cleared if you continue. Continue?`,
     manualDecision: "Human decision",
     manualDecisionGroup: "Choose a human decision",
+    reviewQueue: "Human review queue",
+    reviewToolbar: "Review and export actions",
+    scopeSource: "Automatic fact",
+    scopeRequired: "Must-preserve",
+    scopeAdded: "New in rewrite",
+    nextPending: "Next pending",
+    copyFixList: "Copy fix list",
+    fixListCopied: "Fix list copied",
+    fixListEmpty: "No confirmed issues yet",
+    note: "Review note",
+    expectedFix: "Expected fix",
+    optional: "Optional",
+    notePlaceholder: "Add reasoning or handoff context (500 characters max)",
+    expectedFixPlaceholder: "Describe how the rewrite should be corrected (500 characters max)",
+    machineDetailsNote: "Machine details only; record human decisions in the unified queue above.",
+    remainingPending: (count: number) =>
+      `${count} pending item${count === 1 ? "" : "s"} remain.`,
+    movedToPending: (index: number, scope: string, raw: string) =>
+      `Moved to pending item ${index}: ${scope} ${raw}.`,
+    migrationResult: (
+      retained: number,
+      reset: number,
+      dropped: number,
+      ambiguous: number,
+    ) =>
+      `Recheck complete: ${retained} decision${retained === 1 ? "" : "s"} retained; ${reset} reset because the evidence changed${dropped ? `; ${dropped} old record${dropped === 1 ? " was" : "s were"} not migrated${ambiguous ? ` (${ambiguous} ambiguous)` : ""}` : ""}.`,
+    migrationDropConfirm: (dropped: number, ambiguous: number) =>
+      `${dropped} old human review record${dropped === 1 ? " cannot" : "s cannot"} be migrated safely${ambiguous ? `; ${ambiguous} ${ambiguous === 1 ? "has" : "have"} multiple possible matches` : ""}. Continuing adopts the new result and removes those old records. Cancel to keep the previous result and every review record. Continue?`,
+    migrationCancelled:
+      "The new result was not adopted. The previous result and review records are unchanged.",
+    exportSession: "Export session",
+    importSession: "Import session",
+    sessionPrivacy:
+      "Session files contain the full source, rewrite, must-preserve content, and human records as unencrypted text. KeepFacts never autosaves or uploads them.",
+    exportSessionConfirm:
+      "The session file contains the full text and human records and is not encrypted. Anyone with the file can read it. Continue exporting?",
+    importSessionConfirm:
+      "Importing replaces the current text, results, and human records. The file has been validated locally. Continue?",
+    sessionExported: "Session file exported",
+    sessionExportFailed: "The session file could not be exported. Current work is unchanged.",
+    sessionImported: (restored: number, dropped: number) =>
+      `Session imported: ${restored} human record${restored === 1 ? "" : "s"} restored${dropped ? `; ${dropped} did not match` : ""}.`,
+    sessionImporting: "Validating the session locally…",
+    sessionImportFailed: "This session file could not be imported. Current work was not changed.",
     previousPage: "Previous",
     nextPage: "Next",
     pageStatus: (page: number, pages: number, total: number) =>
@@ -306,17 +418,23 @@ function ResultCard({
   locale,
   added = false,
   reviewScope,
-  decision,
-  onDecisionChange,
+  reviewRecord,
+  onReviewRecordChange,
   reviewDisabled = false,
+  queuePosition,
+  scopeLabel,
+  headingRef,
 }: {
   fact: Fact | ComparedFact;
   locale: Locale;
   added?: boolean;
   reviewScope?: ReviewScope;
-  decision?: ReviewDecision;
-  onDecisionChange?: (decision?: ReviewDecision) => void;
+  reviewRecord?: ReviewRecord;
+  onReviewRecordChange?: (patch: Partial<ReviewRecord>) => void;
   reviewDisabled?: boolean;
+  queuePosition?: number;
+  scopeLabel?: string;
+  headingRef?: (element: HTMLHeadingElement | null) => void;
 }) {
   const t = copy[locale];
   const compared = fact as ComparedFact;
@@ -362,6 +480,14 @@ function ResultCard({
         {status === "preserved" ? "✓" : status === "added" ? "+" : "!"}
       </div>
       <div className="result-content">
+        {queuePosition && scopeLabel ? (
+          <div className="review-card-heading">
+            <span className="review-scope">{scopeLabel}</span>
+            <h4 ref={headingRef} className="review-card-title" tabIndex={-1}>
+              {`${queuePosition}. ${kindLabels[locale][fact.kind]} ${sourceFact?.raw ?? fact.raw}`}
+            </h4>
+          </div>
+        ) : null}
         <div className="result-heading">
           <span className="kind-label">{kindLabels[locale][fact.kind]}</span>
           <div className="fact-comparison">
@@ -381,16 +507,18 @@ function ResultCard({
           </div>
         </div>
         <p className="status-note">{statusText}</p>
-        {reviewable && reviewScope && onDecisionChange ? (
+        {reviewable && reviewScope && onReviewRecordChange ? (
           <fieldset className="review-decision" disabled={reviewDisabled}>
             <legend className="sr-only">
-              {`${t.manualDecisionGroup}: ${sourceFact?.raw ?? fact.raw}`}
+              {`${queuePosition ? `${queuePosition}. ` : ""}${scopeLabel ? `${scopeLabel}, ` : ""}${t.manualDecisionGroup}: ${sourceFact?.raw ?? fact.raw}`}
             </legend>
             <div className="review-decision-heading">
               <span>{t.manualDecision}</span>
               <strong>
-                {decision
-                  ? decisionOptions.find((option) => option.value === decision)
+                {reviewRecord?.decision
+                  ? decisionOptions.find(
+                      (option) => option.value === reviewRecord.decision,
+                    )
                       ?.label
                   : t.manualPending}
               </strong>
@@ -400,7 +528,7 @@ function ResultCard({
                 <label
                   key={option.key}
                   className={
-                    decision === option.value
+                    reviewRecord?.decision === option.value
                       ? "review-decision-option selected"
                       : "review-decision-option"
                   }
@@ -409,14 +537,44 @@ function ResultCard({
                     type="radio"
                     name={reviewDecisionKey(reviewScope, fact)}
                     value={option.key}
-                    checked={decision === option.value}
-                    onChange={() => onDecisionChange(option.value)}
+                    checked={reviewRecord?.decision === option.value}
+                    onChange={() =>
+                      onReviewRecordChange({ decision: option.value })
+                    }
                   />
                   <span>{option.label}</span>
                 </label>
               ))}
             </div>
           </fieldset>
+        ) : null}
+        {reviewable && reviewScope && onReviewRecordChange ? (
+          <div className="review-annotations">
+            <label className="review-field">
+              <span>{`${t.note} · ${t.optional}`}</span>
+              <textarea
+                value={reviewRecord?.note ?? ""}
+                maxLength={500}
+                disabled={reviewDisabled}
+                placeholder={t.notePlaceholder}
+                onChange={(event) =>
+                  onReviewRecordChange({ note: event.target.value })
+                }
+              />
+            </label>
+            <label className="review-field">
+              <span>{`${t.expectedFix} · ${t.optional}`}</span>
+              <textarea
+                value={reviewRecord?.expectedFix ?? ""}
+                maxLength={500}
+                disabled={reviewDisabled}
+                placeholder={t.expectedFixPlaceholder}
+                onChange={(event) =>
+                  onReviewRecordChange({ expectedFix: event.target.value })
+                }
+              />
+            </label>
+          </div>
         ) : null}
         {sourceFact?.context || rewriteFact?.context ? (
           <details className="context-details">
@@ -462,7 +620,22 @@ export default function Home() {
   const [hasRun, setHasRun] = useState(true);
   const [isExampleMode, setIsExampleMode] = useState(true);
   const [filter, setFilter] = useState<Filter>("actionable");
-  const [reviewDecisions, setReviewDecisions] = useState<ReviewDecisions>({});
+  const [reviewRecords, setReviewRecords] = useState<ReviewRecords>({});
+  const [reviewQueueOrder, setReviewQueueOrder] = useState(() =>
+    getReviewOrder(
+      compareFacts(
+        initialExample.source,
+        initialExample.revision,
+        initialExample.required,
+      ),
+    ),
+  );
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewAnnouncement, setReviewAnnouncement] = useState("");
+  const [pendingReviewFocus, setPendingReviewFocus] = useState<string>();
+  const [sessionFeedback, setSessionFeedback] = useState("");
+  const [sessionError, setSessionError] = useState("");
+  const [importingSession, setImportingSession] = useState(false);
   const [resultPage, setResultPage] = useState(1);
   const [requiredPage, setRequiredPage] = useState(1);
   const [reportFeedback, setReportFeedback] = useState("");
@@ -479,11 +652,25 @@ export default function Home() {
   const sourceInput = useRef<HTMLTextAreaElement | null>(null);
   const automaticResultsHeading = useRef<HTMLHeadingElement | null>(null);
   const requiredResultsHeading = useRef<HTMLHeadingElement | null>(null);
+  const reviewWorkspaceHeading = useRef<HTMLHeadingElement | null>(null);
   const localeRef = useRef(locale);
+  const activeReviewKey = useRef<string | undefined>(undefined);
+  const reviewItemElements = useRef(new Map<string, HTMLElement>());
+  const sessionInput = useRef<HTMLInputElement | null>(null);
+  const importWorkerRef = useRef<Worker | null>(null);
+  const importSequence = useRef(0);
+  const importTimeout = useRef<number | undefined>(undefined);
   const workerRef = useRef<Worker | null>(null);
   const requestSequence = useRef(0);
   const pendingRef = useRef<
-    { requestId: number; input: CompareInput; worker: Worker } | undefined
+    | {
+        requestId: number;
+        input: CompareInput;
+        worker: Worker;
+        previous?: { input: CompareInput; comparison: typeof comparison };
+        records: ReviewRecords;
+      }
+    | undefined
   >(undefined);
   const t = copy[locale];
   localeRef.current = locale;
@@ -499,6 +686,10 @@ export default function Home() {
         window.clearTimeout(reportFeedbackTimer.current);
       }
       workerRef.current?.terminate();
+      importWorkerRef.current?.terminate();
+      if (importTimeout.current !== undefined) {
+        window.clearTimeout(importTimeout.current);
+      }
     },
     [],
   );
@@ -525,6 +716,17 @@ export default function Home() {
     sourceInput.current?.scrollIntoView({ behavior: "auto", block: "center" });
     setFocusSourceAfterReset(false);
   }, [focusSourceAfterReset]);
+
+  useEffect(() => {
+    if (!pendingReviewFocus) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = reviewItemElements.current.get(pendingReviewFocus);
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ behavior: "auto", block: "center" });
+      setPendingReviewFocus(undefined);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingReviewFocus, reviewPage, reviewQueueOrder]);
 
   const total = comparison.sourceFacts.length;
   const retention = total
@@ -556,6 +758,17 @@ export default function Home() {
     setComparisonFeedback("");
   };
 
+  const cancelPendingImport = () => {
+    importSequence.current += 1;
+    importWorkerRef.current?.terminate();
+    importWorkerRef.current = null;
+    if (importTimeout.current !== undefined) {
+      window.clearTimeout(importTimeout.current);
+      importTimeout.current = undefined;
+    }
+    setImportingSession(false);
+  };
+
   const updateInput = (
     setter: (value: string) => void,
     value: string,
@@ -567,10 +780,9 @@ export default function Home() {
   };
 
   const confirmReviewReset = () => {
-    const decisionCount = Object.keys(reviewDecisions).length;
+    const recordCount = Object.keys(reviewRecords).length;
     return (
-      decisionCount === 0 ||
-      window.confirm(t.resetReviewConfirm(decisionCount))
+      recordCount === 0 || window.confirm(t.resetReviewConfirm(recordCount))
     );
   };
 
@@ -585,15 +797,21 @@ export default function Home() {
   const loadExample = () => {
     if (!confirmReviewReset()) return;
     cancelPendingComparison();
+    cancelPendingImport();
     const example = examples[locale];
     setSource(example.source);
     setRevision(example.revision);
     setRequired(example.required);
     setCheckedInput(example);
-    setComparison(
-      compareFacts(example.source, example.revision, example.required),
+    const nextComparison = compareFacts(
+      example.source,
+      example.revision,
+      example.required,
     );
-    setReviewDecisions({});
+    setComparison(nextComparison);
+    setReviewRecords({});
+    setReviewQueueOrder(getReviewOrder(nextComparison));
+    setReviewPage(1);
     setHasRun(true);
     setIsExampleMode(true);
     setFilter("actionable");
@@ -601,18 +819,23 @@ export default function Home() {
     setRequiredPage(1);
     setComparisonError("");
     setComparisonFeedback("");
+    setReviewAnnouncement("");
+    setSessionError("");
     setFocusResultsAfterRun(false);
   };
 
   const clearAll = () => {
     if (!confirmReviewReset()) return;
     cancelPendingComparison();
+    cancelPendingImport();
     setSource("");
     setRevision("");
     setRequired("");
     setCheckedInput({ source: "", revision: "", required: "" });
     setComparison(compareFacts("", "", ""));
-    setReviewDecisions({});
+    setReviewRecords({});
+    setReviewQueueOrder([]);
+    setReviewPage(1);
     setHasRun(false);
     setIsExampleMode(false);
     setFilter("all");
@@ -620,6 +843,8 @@ export default function Home() {
     setRequiredPage(1);
     setComparisonError("");
     setComparisonFeedback("");
+    setReviewAnnouncement("");
+    setSessionError("");
   };
 
   const startOwnText = () => {
@@ -629,12 +854,15 @@ export default function Home() {
     }
     if (!confirmReviewReset()) return;
     cancelPendingComparison();
+    cancelPendingImport();
     setSource("");
     setRevision("");
     setRequired("");
     setCheckedInput({ source: "", revision: "", required: "" });
     setComparison(compareFacts("", "", ""));
-    setReviewDecisions({});
+    setReviewRecords({});
+    setReviewQueueOrder([]);
+    setReviewPage(1);
     setHasRun(false);
     setIsExampleMode(false);
     setFilter("all");
@@ -642,6 +870,8 @@ export default function Home() {
     setRequiredPage(1);
     setComparisonError("");
     setComparisonFeedback("");
+    setReviewAnnouncement("");
+    setSessionError("");
     setFocusSourceAfterReset(true);
   };
 
@@ -658,9 +888,12 @@ export default function Home() {
       setFocusResultsAfterRun(true);
       return;
     }
-    if (!confirmReviewReset()) return;
     const input = { source, revision, required };
     const requestId = ++requestSequence.current;
+    const previous = hasRun
+      ? { input: checkedInput, comparison }
+      : undefined;
+    const recordsAtStart = reviewRecords;
     let worker: Worker;
 
     try {
@@ -678,20 +911,25 @@ export default function Home() {
       workerRef.current === worker &&
       pendingRef.current?.worker === worker &&
       pendingRef.current.requestId === requestId;
-    const finishError = () => {
+    const finishError = (message?: string) => {
       if (!isCurrent()) return;
       worker.terminate();
       workerRef.current = null;
       pendingRef.current = undefined;
       setBusy(false);
-      setComparisonError(copy[localeRef.current].compareFailed);
+      const currentCopy = copy[localeRef.current];
+      setComparisonError(
+        message === "comparison-limit-exceeded"
+          ? currentCopy.compareLimitExceeded
+          : currentCopy.compareFailed,
+      );
       setComparisonFeedback("");
     };
 
     worker.onmessage = ({ data }: MessageEvent<CompareWorkerResponse>) => {
       if (!isCurrent() || data.requestId !== requestId) return;
       if (data.type === "error") {
-        finishError();
+        finishError(data.message);
         return;
       }
 
@@ -699,8 +937,38 @@ export default function Home() {
       workerRef.current = null;
       pendingRef.current = undefined;
       setBusy(false);
+      const migration = previous
+        ? migrateReviewRecords(
+            previous,
+            { input, comparison: data.comparison },
+            recordsAtStart,
+          )
+        : {
+            records: {},
+            retainedDecisions: 0,
+            resetDecisions: 0,
+            retainedAnnotations: 0,
+            droppedRecords: 0,
+            ambiguousRecords: 0,
+          };
+      const currentCopy = copy[localeRef.current];
+      if (
+        (migration.droppedRecords > 0 || migration.ambiguousRecords > 0) &&
+        !window.confirm(
+          currentCopy.migrationDropConfirm(
+            migration.droppedRecords,
+            migration.ambiguousRecords,
+          ),
+        )
+      ) {
+        setComparisonError("");
+        setComparisonFeedback(currentCopy.migrationCancelled);
+        return;
+      }
       setComparison(data.comparison);
-      setReviewDecisions({});
+      setReviewRecords(migration.records);
+      setReviewQueueOrder(getReviewOrder(data.comparison));
+      setReviewPage(1);
       setCheckedInput(input);
       setHasRun(true);
       setFilter(
@@ -711,26 +979,47 @@ export default function Home() {
       setResultPage(1);
       setRequiredPage(1);
       setComparisonError("");
-      const currentCopy = copy[localeRef.current];
       setComparisonFeedback(
-        currentCopy.resultReady(
-          data.comparison.sourceFacts.length,
-          data.comparison.reviewCount,
-          data.comparison.addedCount,
-          data.comparison.requiredMissingCount +
-          data.comparison.requiredNotInSourceCount,
-        ),
+        previous &&
+          (migration.retainedDecisions ||
+            migration.resetDecisions ||
+            migration.droppedRecords ||
+            migration.ambiguousRecords)
+          ? currentCopy.migrationResult(
+              migration.retainedDecisions,
+              migration.resetDecisions,
+              migration.droppedRecords,
+              migration.ambiguousRecords,
+            )
+          : currentCopy.resultReady(
+              data.comparison.sourceFacts.length,
+              data.comparison.reviewCount,
+              data.comparison.addedCount,
+              data.comparison.requiredMissingCount +
+                data.comparison.requiredNotInSourceCount,
+            ),
       );
       setFocusResultsAfterRun(true);
     };
-    worker.onerror = finishError;
-    worker.onmessageerror = finishError;
+    worker.onerror = () => finishError();
+    worker.onmessageerror = () => finishError();
     workerRef.current = worker;
-    pendingRef.current = { requestId, input, worker };
+    pendingRef.current = {
+      requestId,
+      input,
+      worker,
+      previous,
+      records: recordsAtStart,
+    };
     setBusy(true);
     setComparisonError("");
     setComparisonFeedback(t.comparing);
-    const request: CompareWorkerRequest = { type: "compare", requestId, input };
+    const request: CompareWorkerRequest = {
+      type: "compare",
+      requestId,
+      input,
+      limits: { maxFactsPerSide: 1_000, maxRequiredItems: 1_000 },
+    };
     try {
       worker.postMessage(request);
     } catch {
@@ -743,6 +1032,7 @@ export default function Home() {
       window.clearTimeout(reportFeedbackTimer.current);
     }
     setReportFeedback(message);
+    setReviewAnnouncement(message);
     reportFeedbackTimer.current = window.setTimeout(() => {
       setReportFeedback("");
       reportFeedbackTimer.current = undefined;
@@ -753,24 +1043,17 @@ export default function Home() {
     buildMarkdownReport(comparison, locale, {
       appVersion: APP_VERSION,
       commitSha: APP_COMMIT_SHA,
-      reviewDecisions,
+      reviewRecords,
     });
 
-  const setFactDecision = (
-    scope: ReviewScope,
-    fact: Fact,
-    decision?: ReviewDecision,
+  const setFactReviewRecord = (
+    key: string,
+    patch: Partial<ReviewRecord>,
   ) => {
-    const key = reviewDecisionKey(scope, fact);
-    setReviewDecisions((current) => {
-      if (decision) return { ...current, [key]: decision };
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
+    setReviewRecords((current) => updateReviewRecord(current, key, patch));
   };
 
-  const manualSummary = summarizeReviews(comparison, reviewDecisions);
+  const manualSummary = summarizeReviews(comparison, reviewRecords);
   const reviewOutcome = getReviewOutcome(manualSummary);
   const currentReviewState = resultsOutdated ? "outdated" : reviewOutcome;
   const reviewOutcomeText = resultsOutdated
@@ -781,16 +1064,84 @@ export default function Home() {
         "needs-changes": t.reviewNeedsChanges,
         acceptable: t.reviewAcceptable,
       }[reviewOutcome]);
+  const reviewItems = getReviewItems(comparison);
+  const reviewItemsByKey = new Map(reviewItems.map((item) => [item.key, item]));
+  const effectiveReviewOrder = [
+    ...reviewQueueOrder.filter((key) => reviewItemsByKey.has(key)),
+    ...reviewItems
+      .map(({ key }) => key)
+      .filter((key) => !reviewQueueOrder.includes(key)),
+  ];
+  const orderedReviewItems = effectiveReviewOrder.flatMap((key) => {
+    const item = reviewItemsByKey.get(key);
+    return item ? [item] : [];
+  });
+  const reviewTotalPages = Math.max(
+    1,
+    Math.ceil(orderedReviewItems.length / RESULT_PAGE_SIZE),
+  );
+  const currentReviewPage = Math.min(reviewPage, reviewTotalPages);
+  const pagedReviewItems = orderedReviewItems.slice(
+    (currentReviewPage - 1) * RESULT_PAGE_SIZE,
+    currentReviewPage * RESULT_PAGE_SIZE,
+  );
+  const scopeLabels: Record<ReviewScope, string> = {
+    source: t.scopeSource,
+    required: t.scopeRequired,
+    added: t.scopeAdded,
+  };
   const focusPageHeading = (heading: HTMLHeadingElement | null) => {
     window.requestAnimationFrame(() => {
       heading?.focus({ preventScroll: true });
       heading?.scrollIntoView({ behavior: "auto", block: "start" });
     });
   };
+  const moveToNextPending = () => {
+    const targetKey = getNextPendingReviewKey(
+      comparison,
+      reviewRecords,
+      activeReviewKey.current,
+    );
+    if (!targetKey) return;
+    const nextOrder = orderReviewQueue(
+      effectiveReviewOrder,
+      reviewRecords,
+      targetKey,
+    );
+    const targetIndex = nextOrder.indexOf(targetKey);
+    const target = reviewItemsByKey.get(targetKey);
+    setReviewQueueOrder(nextOrder);
+    setReviewPage(Math.floor(targetIndex / RESULT_PAGE_SIZE) + 1);
+    setPendingReviewFocus(targetKey);
+    if (target) {
+      setReviewAnnouncement(
+        t.movedToPending(
+          targetIndex + 1,
+          scopeLabels[target.scope],
+          target.fact.raw,
+        ),
+      );
+    }
+  };
   const copyReport = async () => {
     try {
       await navigator.clipboard.writeText(reportMarkdown());
       showReportFeedback(t.copied);
+    } catch {
+      showReportFeedback(t.copyFailed);
+    }
+  };
+  const copyFixList = async () => {
+    const fixes = getFixList(comparison, reviewRecords);
+    if (!fixes.length) {
+      showReportFeedback(t.fixListEmpty);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(
+        buildFixListMarkdown(comparison, locale, reviewRecords),
+      );
+      showReportFeedback(t.fixListCopied);
     } catch {
       showReportFeedback(t.copyFailed);
     }
@@ -809,6 +1160,234 @@ export default function Home() {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
     showReportFeedback(t.downloaded);
+  };
+
+  const exportSession = () => {
+    if (!window.confirm(t.exportSessionConfirm)) return;
+    const session: KeepFactsSessionV1 = {
+      format: "keepfacts.session",
+      schemaVersion: KEEPFACTS_SESSION_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      generator: { appVersion: APP_VERSION, commitSha: APP_COMMIT_SHA },
+      privacy: { containsFullText: true, encrypted: false },
+      locale,
+      editor: { source, revision, required },
+      result: hasRun
+        ? {
+            input: checkedInput,
+            reviewRecords: Object.entries(reviewRecords)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .flatMap(([key, record]) =>
+                record
+                  ? [
+                      {
+                        key,
+                        ...(record.decision
+                          ? { decision: record.decision }
+                          : {}),
+                        ...(record.note ? { note: record.note } : {}),
+                        ...(record.expectedFix
+                          ? { expectedFix: record.expectedFix }
+                          : {}),
+                      },
+                    ]
+                  : [],
+              ),
+          }
+        : null,
+    };
+    try {
+      const serialized = serializeKeepFactsSession(session);
+      const blob = new Blob([serialized], {
+        type: "application/json;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `keepfacts-session-${new Date()
+        .toISOString()
+        .replace(/[-:]/gu, "")
+        .replace(/\.\d{3}Z$/u, "Z")}.keepfacts.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setSessionFeedback(t.sessionExported);
+      setSessionError("");
+    } catch {
+      setSessionError(t.sessionExportFailed);
+    }
+  };
+
+  const commitImportedSession = (
+    session: KeepFactsSessionV1,
+    importedComparison?: typeof comparison,
+  ) => {
+    if (!window.confirm(t.importSessionConfirm)) return false;
+    cancelPendingComparison();
+    const nextLocale = session.locale;
+    const url = new URL(window.location.href);
+    url.searchParams.set("lang", nextLocale);
+    window.history.replaceState(window.history.state, "", url);
+    setLocale(nextLocale);
+    setSource(session.editor.source);
+    setRevision(session.editor.revision);
+    setRequired(session.editor.required);
+    setIsExampleMode(false);
+    setFilter(
+      importedComparison &&
+        (importedComparison.reviewCount || importedComparison.addedCount)
+        ? "actionable"
+        : "all",
+    );
+    setResultPage(1);
+    setRequiredPage(1);
+    setReviewPage(1);
+    setComparisonError("");
+    setComparisonFeedback("");
+    setReviewAnnouncement("");
+
+    if (!session.result || !importedComparison) {
+      setCheckedInput({ source: "", revision: "", required: "" });
+      setComparison(compareFacts("", "", ""));
+      setReviewRecords({});
+      setReviewQueueOrder([]);
+      setHasRun(false);
+      setFocusSourceAfterReset(true);
+      setSessionFeedback(copy[nextLocale].sessionImported(0, 0));
+      return true;
+    }
+
+    const reconciled = reconcileKeepFactsReviewRecords(
+      session.result.reviewRecords,
+      importedComparison,
+    );
+    setCheckedInput(session.result.input);
+    setComparison(importedComparison);
+    setReviewRecords(reconciled.reviewRecords);
+    setReviewQueueOrder(getReviewOrder(importedComparison));
+    setHasRun(true);
+    setFocusResultsAfterRun(true);
+    setSessionFeedback(
+      copy[nextLocale].sessionImported(
+        reconciled.restoredCount,
+        reconciled.discardedCount,
+      ),
+    );
+    return true;
+  };
+
+  const importSessionFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const inputElement = event.currentTarget;
+    const file = inputElement.files?.[0];
+    inputElement.value = "";
+    if (!file) return;
+    cancelPendingImport();
+    const importId = ++importSequence.current;
+    const isCurrentImport = () => importSequence.current === importId;
+    setImportingSession(true);
+    setSessionError("");
+    setSessionFeedback("");
+    if (
+      !file.name.toLowerCase().endsWith(".keepfacts.json") ||
+      file.size <= 0 ||
+      file.size > KEEPFACTS_SESSION_MAX_BYTES
+    ) {
+      if (isCurrentImport()) {
+        setImportingSession(false);
+        setSessionError(t.sessionImportFailed);
+      }
+      return;
+    }
+
+    let session: KeepFactsSessionV1;
+    try {
+      const contents = await file.text();
+      if (!isCurrentImport()) return;
+      session = parseKeepFactsSession(contents);
+    } catch {
+      if (isCurrentImport()) {
+        setImportingSession(false);
+        setSessionError(copy[localeRef.current].sessionImportFailed);
+      }
+      return;
+    }
+
+    if (!session.result) {
+      if (!isCurrentImport()) return;
+      commitImportedSession(session);
+      if (isCurrentImport()) setImportingSession(false);
+      return;
+    }
+
+    const requestId = importId;
+    let worker: Worker;
+    try {
+      worker = new Worker(
+        new URL("./workers/compare.worker.ts", import.meta.url),
+        { type: "module", name: "keepfacts-session-import" },
+      );
+    } catch {
+      if (isCurrentImport()) {
+        setImportingSession(false);
+        setSessionError(copy[localeRef.current].sessionImportFailed);
+      }
+      return;
+    }
+    importWorkerRef.current = worker;
+    setImportingSession(true);
+    const isCurrentWorker = () =>
+      isCurrentImport() && importWorkerRef.current === worker;
+    const finish = () => {
+      if (!isCurrentWorker()) return false;
+      worker.terminate();
+      importWorkerRef.current = null;
+      if (importTimeout.current !== undefined) {
+        window.clearTimeout(importTimeout.current);
+        importTimeout.current = undefined;
+      }
+      setImportingSession(false);
+      return true;
+    };
+    const fail = () => {
+      if (!finish()) return;
+      setSessionError(copy[localeRef.current].sessionImportFailed);
+    };
+    worker.onmessage = ({ data }: MessageEvent<CompareWorkerResponse>) => {
+      if (
+        !isCurrentWorker() ||
+        data.requestId !== requestId
+      ) {
+        return;
+      }
+      if (data.type === "error") {
+        fail();
+        return;
+      }
+      if (!finish()) return;
+      if (
+        data.comparison.sourceFacts.length > 1_000 ||
+        data.comparison.requiredCount > 1_000
+      ) {
+        setSessionError(copy[localeRef.current].sessionImportFailed);
+        return;
+      }
+      commitImportedSession(session, data.comparison);
+    };
+    worker.onerror = fail;
+    worker.onmessageerror = fail;
+    importTimeout.current = window.setTimeout(fail, 15_000);
+    const request: CompareWorkerRequest = {
+      type: "compare",
+      requestId,
+      input: session.result.input,
+      limits: { maxFactsPerSide: 1_000, maxRequiredItems: 1_000 },
+    };
+    try {
+      worker.postMessage(request);
+    } catch {
+      fail();
+    }
   };
 
   const visibleSourceFacts = comparison.sourceFacts.filter((fact) => {
@@ -847,7 +1426,7 @@ export default function Home() {
   const filters: Array<{ key: Filter; label: string; count: number }> = [
     {
       key: "actionable",
-      label: t.reviewItems,
+      label: t.issuesAndAdditions,
       count: comparison.reviewCount + comparison.addedCount,
     },
     {
@@ -1048,6 +1627,30 @@ export default function Home() {
             <span>{t.compareHint}</span>
           </div>
         </div>
+        <div className="session-actions" role="group" aria-label={t.sessionPrivacy}>
+          <button type="button" onClick={exportSession}>
+            {t.exportSession}
+          </button>
+          <button
+            type="button"
+            onClick={() => sessionInput.current?.click()}
+            disabled={importingSession}
+          >
+            {importingSession ? t.sessionImporting : t.importSession}
+          </button>
+          <input
+            ref={sessionInput}
+            className="sr-only"
+            type="file"
+            aria-hidden="true"
+            tabIndex={-1}
+            accept=".keepfacts.json,application/json"
+            onChange={(event) => void importSessionFile(event)}
+          />
+        </div>
+        <p className="session-notice">{t.sessionPrivacy}</p>
+        {sessionFeedback ? <p role="status">{sessionFeedback}</p> : null}
+        {sessionError ? <p role="alert">{sessionError}</p> : null}
         {comparisonError ? (
           <div className="stale-notice comparison-error" role="alert">
             {comparisonError}
@@ -1068,25 +1671,6 @@ export default function Home() {
               <p>{t.resultIntro}</p>
             </div>
             <div className="result-tools">
-              <div className="report-actions" aria-label={t.resultTitle}>
-                <button
-                  type="button"
-                  onClick={copyReport}
-                  disabled={busy || resultsOutdated}
-                >
-                  {t.copyReport}
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadReport}
-                  disabled={busy || resultsOutdated}
-                >
-                  {t.downloadReport}
-                </button>
-              </div>
-              <span className="report-feedback" role="status" aria-live="polite">
-                {reportFeedback}
-              </span>
               <div
                 className="score-ring"
                 role={retention === null ? "status" : "meter"}
@@ -1137,55 +1721,172 @@ export default function Home() {
             </div>
           </div>
 
-          {manualSummary.total ? (
-            <section
-              className="manual-review-summary"
-              aria-labelledby="manual-review-title"
-            >
-              <div className="manual-review-heading">
-                <div>
-                  <h3 id="manual-review-title">{t.manualReview}</h3>
-                  <p>{t.manualReviewHint}</p>
-                </div>
-                <div className="manual-review-status">
-                  <strong aria-live="polite" aria-atomic="true">
+          <section className="review-workspace" aria-labelledby="review-workspace-title">
+            <header>
+              <h3
+                id="review-workspace-title"
+                ref={reviewWorkspaceHeading}
+                tabIndex={-1}
+              >
+                {t.manualReview}
+              </h3>
+              <p>{t.manualReviewHint}</p>
+            </header>
+            <div className="review-toolbar">
+              <div className="review-toolbar-main">
+                <div className="review-progress">
+                  {manualSummary.total ? (
+                    <progress
+                      value={manualSummary.total - manualSummary.pending}
+                      max={manualSummary.total}
+                      aria-label={t.manualReview}
+                      aria-valuetext={`${manualSummary.total - manualSummary.pending}/${manualSummary.total}`}
+                    />
+                  ) : null}
+                  <strong>
                     {manualSummary.total - manualSummary.pending}/{manualSummary.total}
                   </strong>
                   <span
                     className={`review-outcome review-outcome-${currentReviewState}`}
                     data-review-state={currentReviewState}
                     data-testid="review-outcome"
-                    role="status"
                     aria-label={`${t.reviewOutcomeLabel}: ${reviewOutcomeText}`}
                   >
                     {reviewOutcomeText}
                   </span>
                 </div>
+                <div className="review-actions" role="group" aria-label={t.reviewToolbar}>
+                  {manualSummary.total ? (
+                    <>
+                      <button
+                        type="button"
+                        data-review-action="next-pending"
+                        onClick={moveToNextPending}
+                        disabled={busy || resultsOutdated || manualSummary.pending === 0}
+                      >
+                        {t.nextPending}
+                      </button>
+                      <button
+                        type="button"
+                        data-review-action="copy-fix-list"
+                        onClick={copyFixList}
+                        disabled={busy || resultsOutdated || manualSummary.confirmed === 0}
+                      >
+                        {t.copyFixList}
+                      </button>
+                    </>
+                  ) : null}
+                  <button type="button" onClick={copyReport} disabled={busy || resultsOutdated}>
+                    {t.copyReport}
+                  </button>
+                  <button type="button" onClick={downloadReport} disabled={busy || resultsOutdated}>
+                    {t.downloadReport}
+                  </button>
+                </div>
               </div>
-              <div className="manual-summary-grid">
-                <div className="summary-card summary-neutral">
-                  <span>{t.manualTotal}</span>
-                  <strong>{manualSummary.total}</strong>
-                </div>
-                <div className="summary-card summary-warning">
-                  <span>{t.manualPending}</span>
-                  <strong>{manualSummary.pending}</strong>
-                </div>
-                <div className="summary-card summary-confirmed">
-                  <span>{t.manualConfirmed}</span>
-                  <strong>{manualSummary.confirmed}</strong>
-                </div>
-                <div className="summary-card summary-success">
-                  <span>{t.manualAccepted}</span>
-                  <strong>{manualSummary.accepted}</strong>
-                </div>
-                <div className="summary-card summary-ignored">
-                  <span>{t.manualIgnored}</span>
-                  <strong>{manualSummary.ignored}</strong>
-                </div>
-              </div>
-            </section>
-          ) : null}
+              <span className="report-feedback">{reportFeedback}</span>
+            </div>
+            <span
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-testid="review-announcement"
+            >
+              {reviewAnnouncement || reportFeedback}
+            </span>
+
+            {pagedReviewItems.length ? (
+              <ol className="review-queue" aria-label={t.reviewQueue}>
+                {pagedReviewItems.map((item) => {
+                  const added = item.scope === "added";
+                  const position = effectiveReviewOrder.indexOf(item.key) + 1;
+                  return (
+                    <li
+                      key={item.key}
+                      data-review-key={item.key}
+                      data-review-scope={item.scope}
+                      data-review-state={reviewRecords[item.key]?.decision ?? "pending"}
+                      onFocusCapture={() => {
+                        activeReviewKey.current = item.key;
+                      }}
+                    >
+                      <ResultCard
+                        fact={item.fact}
+                        locale={locale}
+                        added={added}
+                        reviewScope={item.scope}
+                        reviewRecord={reviewRecords[item.key]}
+                        onReviewRecordChange={(patch) => {
+                          setFactReviewRecord(item.key, patch);
+                          const nextDecision = patch.decision;
+                          if (Object.prototype.hasOwnProperty.call(patch, "decision")) {
+                            const decisionLabel = nextDecision
+                              ? {
+                                  confirmed: t.manualConfirmed,
+                                  accepted: t.manualAccepted,
+                                  ignored: t.manualIgnored,
+                                }[nextDecision]
+                              : t.manualPending;
+                            const wasPending = !reviewRecords[item.key]?.decision;
+                            const willBePending = !nextDecision;
+                            const remaining = Math.max(
+                              0,
+                              manualSummary.pending +
+                                (wasPending === willBePending
+                                  ? 0
+                                  : willBePending
+                                    ? 1
+                                    : -1),
+                            );
+                            setReviewAnnouncement(
+                              `${scopeLabels[item.scope]} ${item.fact.raw}：${decisionLabel}。${t.remainingPending(remaining)}`,
+                            );
+                          }
+                        }}
+                        reviewDisabled={busy || resultsOutdated}
+                        queuePosition={position}
+                        scopeLabel={scopeLabels[item.scope]}
+                        headingRef={(element) => {
+                          if (element) reviewItemElements.current.set(item.key, element);
+                          else reviewItemElements.current.delete(item.key);
+                        }}
+                      />
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="machine-details-note">{t.reviewNoFindings}</p>
+            )}
+            {orderedReviewItems.length > RESULT_PAGE_SIZE ? (
+              <nav className="review-pagination" aria-label={t.reviewQueue}>
+                <button
+                  type="button"
+                  disabled={currentReviewPage === 1}
+                  onClick={() => {
+                    setReviewPage(currentReviewPage - 1);
+                    focusPageHeading(reviewWorkspaceHeading.current);
+                  }}
+                >
+                  {t.previousPage}
+                </button>
+                <span aria-current="page">
+                  {t.pageStatus(currentReviewPage, reviewTotalPages, orderedReviewItems.length)}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentReviewPage === reviewTotalPages}
+                  onClick={() => {
+                    setReviewPage(currentReviewPage + 1);
+                    focusPageHeading(reviewWorkspaceHeading.current);
+                  }}
+                >
+                  {t.nextPage}
+                </button>
+              </nav>
+            ) : null}
+          </section>
 
           {comparison.requiredCount ? (
             <section className="required-results" aria-label={t.requiredResults}>
@@ -1226,20 +1927,13 @@ export default function Home() {
                   <strong>{comparison.requiredNotInSourceCount}</strong>
                 </div>
               </div>
+              <p className="machine-details-note">{t.machineDetailsNote}</p>
               <div className="required-result-list">
                 {pagedRequiredFacts.map((fact) => (
                   <ResultCard
                     key={fact.id}
                     fact={fact}
                     locale={locale}
-                    reviewScope={fact.status === "review" ? "required" : undefined}
-                    decision={reviewDecisions[reviewDecisionKey("required", fact)]}
-                    onDecisionChange={
-                      fact.status === "review"
-                        ? (decision) => setFactDecision("required", fact, decision)
-                        : undefined
-                    }
-                    reviewDisabled={busy || resultsOutdated}
                   />
                 ))}
               </div>
@@ -1306,6 +2000,7 @@ export default function Home() {
                 </button>
               ))}
             </div>
+            <p className="machine-details-note">{t.machineDetailsNote}</p>
 
             <div className="result-list">
             {pagedItems.map(({ fact, added }) =>
@@ -1315,26 +2010,12 @@ export default function Home() {
                     fact={fact}
                     locale={locale}
                     added
-                    reviewScope="added"
-                    decision={reviewDecisions[reviewDecisionKey("added", fact)]}
-                    onDecisionChange={(decision) =>
-                      setFactDecision("added", fact, decision)
-                    }
-                    reviewDisabled={busy || resultsOutdated}
                   />
                 ) : (
                   <ResultCard
                     key={fact.id}
                     fact={fact}
                     locale={locale}
-                    reviewScope={fact.status === "review" ? "source" : undefined}
-                    decision={reviewDecisions[reviewDecisionKey("source", fact)]}
-                    onDecisionChange={
-                      fact.status === "review"
-                        ? (decision) => setFactDecision("source", fact, decision)
-                        : undefined
-                    }
-                    reviewDisabled={busy || resultsOutdated}
                   />
                 ),
             )}

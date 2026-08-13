@@ -23,12 +23,14 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.2.1 snapshot
+## v0.3.0 snapshot
 
 - 37 public validation cases
-- 54 automated unit/evaluation/performance tests plus 33 passing Chromium
-  browser and accessibility checks across desktop and 390 px mobile projects
-  (with one intentional desktop skip for the mobile-only privacy-copy check)
+- 73 passing Node unit, evaluation, performance, review, report, and session
+  tests
+- Chromium browser, keyboard, and accessibility checks across desktop and
+  390 px mobile projects run in CI; their pass/fail status is recorded by the
+  release run without fixing an E2E case count in this snapshot
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
@@ -52,9 +54,14 @@ as proof that KeepFacts understands every document.
 The product's extracted-fact retention percentage is calculated only from
 source facts recognized by the supported rules. It measures preserved matches
 within that extracted set; it is not extraction coverage, truth accuracy, or a
-full-document semantic score. v0.2.1 retains the v0.2 comparison, human-review,
-pagination, and Markdown-report workflow while making these boundaries
-explicit.
+full-document semantic score.
+
+v0.3.0 adds tests for one three-scope human-review queue, notes and expected
+fixes, confirmed-only fix-list output, conservative recheck migration, and
+strict plaintext session import/export. Human records remain separate from
+machine counts and retention. This release does not add recognizers or expand
+the public validation or evaluation corpora, so these workflow tests must not
+be interpreted as evidence of broader fact coverage or improved accuracy.
 
 ## Matching guarantees
 

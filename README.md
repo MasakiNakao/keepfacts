@@ -19,16 +19,23 @@ whether exact items it can recognize were preserved, changed, omitted, or added
 between two texts. Recognition is currently optimized for common Chinese and
 English formats.
 
-All analysis runs locally in the browser. No text is uploaded, no account is required, and no AI API key is needed.
+All analysis runs locally in the browser. KeepFacts does not automatically save
+or upload your text; no account or AI API key is needed. Files you explicitly
+export are unencrypted plaintext, as described under
+[Privacy and limitations](#privacy-and-limitations).
 
-[![KeepFacts v0.2.1 interface showing exact-fact comparison and human review decisions](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
+[![KeepFacts interface showing exact-fact comparison and human review decisions](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
 
 ## Try it in 30 seconds
 
 1. Open the [live demo](https://masakinakao.github.io/keepfacts/).
 2. Paste the original text on the left and the rewrite on the right.
 3. Optionally add one must-preserve name or phrase per line.
-4. Select **Compare both texts** to create a fixed result. Mark findings as **Confirmed issue**, **Acceptable rewrite**, or **Ignored**, then copy or download the Markdown report. Recheck after editing either text.
+4. Select **Compare both texts** to create a fixed result. Work through the
+   unified review queue, optionally add a note or expected fix, then copy the
+   confirmed-only fix list or download the full Markdown report.
+5. Recheck after editing either text. To continue later, explicitly export and
+   re-import a local `.keepfacts.json` session.
 
 ## Why KeepFacts?
 
@@ -46,14 +53,25 @@ It is intentionally narrow:
 - its retention percentage covers only facts extracted from the source, not
   every factual statement the document may contain.
 
-## v0.2.1 scope
+## v0.3.0 scope
 
-v0.2.1 keeps the v0.2 workflow—must-preserve terms, per-finding human
-decisions, review progress, pagination, and Markdown report export—while making
-the product boundary explicit. Use it to check whether recognized exact facts
-survive an AI transformation. A 100% extracted-fact retention result does not
-mean that every claim is true, every fact was recognized, or the full meaning
-was preserved.
+v0.3.0 strengthens the human-review and handoff workflow. Automatic warnings,
+must-preserve anomalies, and facts introduced only in the rewrite now share one
+queue. Each item can carry a decision, optional note, and optional expected fix;
+only confirmed issues enter the standalone fix list. A conservative recheck
+migration preserves a decision only when the finding and its evidence still
+match safely, and never silently assigns an ambiguous old record to a new item.
+
+You can explicitly export or import a local `.keepfacts.json` session to move a
+draft, its last checked input, and human records between browser sessions. The
+file is strict, versioned, unencrypted plaintext; see
+[Session format v1](docs/session-format-v1.md).
+
+The fact-recognition engine and public evaluation corpus are unchanged from
+v0.2.1. This release does not demonstrate broader recognition or improved
+accuracy. Use KeepFacts to check whether recognized exact facts survive an AI
+transformation. A 100% extracted-fact retention result does not mean that every
+claim is true, every fact was recognized, or the full meaning was preserved.
 
 ## Current checks
 
@@ -68,8 +86,16 @@ was preserved.
   formatting equivalence
 - User-defined names, terms, and phrases that must be preserved, reported
   separately from extracted-fact retention
-- Per-finding human decisions and pending-review progress across automatic, must-preserve, and newly added findings
-- Traceable Markdown reports with source/rewrite context, app version, and build commit
+- One human-review queue across automatic warnings, must-preserve anomalies,
+  and newly added facts, with decisions, optional notes, optional expected
+  fixes, and a next-pending action
+- A confirmed-only Markdown fix list plus full traceable reports with bilateral
+  context, human records, app version, and build commit
+- Conservative record migration after rechecking: unchanged, uniquely matched
+  evidence can retain its decision; changed evidence returns to pending, and
+  ambiguous or unmatched records are not silently reassigned
+- Explicit local import/export of versioned, unencrypted `.keepfacts.json`
+  sessions; no automatic persistence or upload
 - Fifty-item pagination for large automatic and must-preserve result sets
 - Native radio-group decisions and focus-managed pagination, covered by
   responsive keyboard and browser accessibility checks
@@ -128,7 +154,12 @@ the rules can identify. The extracted-fact retention percentage is preserved
 matches divided by extracted source facts; it is not an extraction-recall or
 full-document accuracy score.
 
-Human decisions are a separate review layer: they never rewrite automatic counts or retention. They remain in page memory only and are included when you copy or download the report; KeepFacts does not persist source text, rewrite text, context, or review decisions in Web Storage.
+Human decisions are a separate review layer: they never rewrite automatic
+counts or extracted-fact retention. KeepFacts does not automatically persist
+source text, rewrite text, context, or review records in Web Storage. While the
+page is open, that working state remains in memory. Reports or session files you
+explicitly export may contain the text, contexts, decisions, notes, and expected
+fixes in plaintext.
 
 ## Roadmap
 
@@ -147,7 +178,16 @@ KeepFacts performs deterministic checks in your browser and contains no
 tracking code. It compares supported exact facts between two texts; it does not
 verify claims against external evidence. It is an additional review aid, not a
 substitute for human review in legal, medical, financial, or other high-stakes
-work. See [SECURITY.md](SECURITY.md).
+work.
+
+KeepFacts does not automatically save or upload your text or review records.
+However, an explicitly exported Markdown report or `.keepfacts.json` session is
+an unencrypted plaintext file. A session includes the full source, rewrite,
+must-preserve content, and human records; a report includes the findings and
+their displayed context. Your browser download location, a cloud-synced folder,
+backup software, or device indexing may copy or synchronize those files. Store,
+share, and delete them accordingly. See [SECURITY.md](SECURITY.md) and the
+[session format](docs/session-format-v1.md).
 
 ## License
 

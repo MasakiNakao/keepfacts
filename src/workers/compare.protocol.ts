@@ -10,6 +10,11 @@ export interface CompareWorkerRequest {
   type: "compare";
   requestId: number;
   input: CompareInput;
+  /** Optional safety guard checked before the O(n³) pairing stage. */
+  limits?: {
+    maxFactsPerSide: number;
+    maxRequiredItems: number;
+  };
 }
 
 export type CompareWorkerResponse =

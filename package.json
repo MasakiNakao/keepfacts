@@ -1,6 +1,6 @@
 {
   "name": "keepfacts",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A local-first exact-fact preservation checker for AI-rewritten text.",
   "license": "MIT",
   "private": true,
@@ -17,6 +17,7 @@
     "eval": "node --experimental-strip-types scripts/evaluate.ts",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:ci": "playwright test",
+    "render:share-card": "node scripts/render-share-card.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "check": "npm run verify:release && npm run test && npm run eval && npm run build",
     "check:all": "npm run check && npm run test:e2e:ci"

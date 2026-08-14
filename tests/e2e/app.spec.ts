@@ -102,8 +102,9 @@ test("distinguishes the example from the user's own text", async ({ page }) => {
   await expect(mode).toContainText("当前显示示例内容和示例结果。");
   await expect(page.getByRole("heading", { name: "核对结果" })).toBeVisible();
 
-  await mode
-    .getByRole("button", { name: "使用我的文本", exact: true })
+  await page
+    .locator(".hero")
+    .getByRole("button", { name: "核对我的文本", exact: true })
     .click();
   await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue("");
   await expect(page.getByRole("textbox", { name: "改写稿" })).toHaveValue("");
@@ -138,15 +139,60 @@ test("uses a non-numeric status when no facts are extracted", async ({ page }) =
   expect(accessibility.violations).toEqual([]);
 });
 
-test("offers unique hero actions for own text and the example", async ({
+test("prioritizes the example and exposes proof, trust, and feedback", async ({
   page,
 }) => {
+  const hero = page.locator(".hero");
+  const exampleAction = hero.getByRole("button", {
+    name: "30 秒看它抓出 3 处错误",
+    exact: true,
+  });
   await expect(
-    page.getByRole("button", { name: "核对我的文本", exact: true }),
+    exampleAction,
+  ).toBeVisible();
+  await expect(exampleAction).toHaveClass(/hero-primary-action/);
+  await expect(
+    hero.getByRole("button", { name: "核对我的文本", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "查看示例结果", exact: true }),
-  ).toBeVisible();
+    hero.getByRole("button", { name: "核对我的文本", exact: true }),
+  ).toHaveClass(/hero-secondary-action/);
+
+  const proof = hero.getByRole("list", { name: "示例中的三处变化" });
+  await expect(proof.getByRole("listitem")).toHaveText([
+    "9月15日 → 9月18日",
+    "100人 → 80人",
+    "发布链接缺失",
+  ]);
+
+  const trust = hero.getByRole("navigation", { name: "源码、隐私与反馈" });
+  const links = [
+    {
+      name: "查看源码",
+      href: "https://github.com/MasakiNakao/keepfacts",
+    },
+    {
+      name: "隐私与边界",
+      href: "https://github.com/MasakiNakao/keepfacts/blob/main/SECURITY.md",
+    },
+    {
+      name: "反馈漏检 / 误报",
+      href: "https://github.com/MasakiNakao/keepfacts/issues/new?template=bug_report.yml",
+    },
+  ];
+  for (const { name, href } of links) {
+    const link = trust.getByRole("link", { name, exact: true });
+    await expect(link).toHaveAttribute("href", href);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noreferrer");
+  }
+  await expect(hero.locator(".feedback-safety")).toHaveText(
+    "反馈时请勿提交敏感、私人或机密文本。",
+  );
+
+  await exampleAction.click();
+  await expect(page.getByRole("heading", { name: "核对结果" })).toBeFocused();
+
   await expect(
     page.getByRole("button", { name: "使用我的文本", exact: true }),
   ).toHaveCount(1);
@@ -156,6 +202,28 @@ test("offers unique hero actions for own text and the example", async ({
   await expect(
     page.getByRole("button", { name: "载入示例", exact: true }),
   ).toBeDisabled();
+
+  await page.getByRole("button", { name: "English" }).click();
+  await expect(
+    hero.getByRole("button", {
+      name: "See 3 errors in 30 seconds",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    hero.getByRole("list", { name: "Three changes in the example" })
+      .getByRole("listitem"),
+  ).toHaveText([
+    "Sep 15 → Sep 18",
+    "100 users → 80 users",
+    "Launch link missing",
+  ]);
+  await expect(
+    hero.getByText(
+      "Do not include sensitive, private, or confidential text in feedback.",
+      { exact: true },
+    ),
+  ).toBeVisible();
 });
 
 test("shows draft, needs-changes, and completed review outcomes", async ({
@@ -390,12 +458,49 @@ test("round-trips private session text and review records after confirmation", a
   ).toBeVisible();
 });
 
-test("shows a concise privacy promise on mobile", async ({ page }, testInfo) => {
+test("keeps first-exposure controls accessible at 390px", async ({
+  page,
+}, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "mobile copy contract");
 
   await expect(page.getByTestId("privacy-copy")).toHaveText(
     "本地处理 · 文本不会上传",
   );
+  await expect.poll(() =>
+    page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+
+  const viewportWidth = page.viewportSize()!.width;
+  expect(viewportWidth).toBe(390);
+  const controls = page.locator(
+    "button, .trust-links a, .required-panel summary, .context-details summary, .review-decision-option",
+  );
+  for (let index = 0; index < (await controls.count()); index += 1) {
+    const box = await controls.nth(index).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+
+  const firstExposureControls = page.locator(
+    ".language-button, .hero-actions button, .trust-links a, .input-mode button",
+  );
+  for (
+    let index = 0;
+    index < (await firstExposureControls.count());
+    index += 1
+  ) {
+    const box = await firstExposureControls.nth(index).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth);
+  }
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
 });
 
 test("is accessible and explains normalized matches", async ({ page }) => {

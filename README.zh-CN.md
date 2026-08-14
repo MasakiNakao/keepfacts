@@ -1,6 +1,6 @@
 # KeepFacts
 
-[English](README.md) · [在线体验](https://masakinakao.github.io/keepfacts/)
+[English](README.md) · [在线体验](https://masakinakao.github.io/keepfacts/?lang=zh) · [源码](https://github.com/MasakiNakao/keepfacts) · [隐私](SECURITY.md) · [反馈](https://github.com/MasakiNakao/keepfacts/issues)
 
 [![在线体验](https://img.shields.io/badge/在线体验-打开-0f5d46)](https://masakinakao.github.io/keepfacts/)
 [![CI](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml/badge.svg)](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml)
@@ -9,29 +9,31 @@
 
 **措辞可以改变，事实不该走样。**
 
+[![KeepFacts v0.3.1：本地核对 AI 改写中的硬事实](public/keepfacts-share-v031.jpg)](https://masakinakao.github.io/keepfacts/?lang=zh)
+
 KeepFacts 是一个小巧、隐私优先的 **AI 改写硬事实保留检查器**。把可信原文和 AI 改写、总结或翻译后的文本分别粘贴进去，它会对照日期、金额、百分比、数量、版本、链接和邮箱等可精确提取的事实项是否被保留、修改、遗漏或新增。
 
 KeepFacts 不联网查证某项说法是否真实，也不判断事实真假；它只比较两版文本中能够识别的精确事实项。目前的识别规则主要针对常见中文和英文格式优化。
 
 所有分析都在浏览器本地完成。KeepFacts 不会自动保存或上传文本，不需要账号，也不需要 AI API Key；但你主动导出的文件是未加密明文，详见[隐私与边界](#隐私与边界)。
 
-[![KeepFacts 原文与改写硬事实保留检查及人工审阅界面](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
-
 ## 30 秒体验
 
-1. 打开[在线体验](https://masakinakao.github.io/keepfacts/)。
-2. 左侧粘贴原文，右侧粘贴 AI 改写、总结或翻译后的文本。
-3. 如有需要，每行填写一个“必须保留”的名称、术语或关键短语。
-4. 点击“对照两版”生成一份固定结果；在统一审阅队列中逐项处理，可选填备注和期望修复，再复制仅含确认问题的修复清单或下载完整 Markdown 报告。
-5. 修改文本后请重新核对。如需之后继续，可主动导出并重新导入本地 `.keepfacts.json` 会话文件。
+1. 打开[在线体验](https://masakinakao.github.io/keepfacts/?lang=zh)，先点击首要操作“30 秒看它抓出 3 处错误”。
+2. 立即查看三个具体示例差异：发布日期改变、测试用户从 100 人变成 80 人、原文发布链接遗漏。
+3. 点击“核对我的文本”，左侧粘贴可信原文，右侧粘贴 AI 改写、总结或翻译后的文本。
+4. 如有需要，每行填写一个“必须保留”的名称、术语或关键短语，再点击“对照两版”；在统一审阅队列中逐项处理，可选填备注和期望修复，并复制仅含确认问题的修复清单或下载完整 Markdown 报告。
+5. 修改文本后请重新核对。如需之后继续，可主动导出并重新导入本地 `.keepfacts.json` 会话文件。非敏感反馈可使用页面可见的“反馈漏检 / 误报”链接，切勿提交私人或机密原文。
 
-## 当前能力
+## v0.3.1 首发范围与当前能力
 
-v0.3.0 强化人工审阅和交接流程：自动事实异常、必保项异常和改写新增事实进入同一个队列；每项可记录人工结论、可选备注和可选期望修复，只有“确认需处理”的项目会进入独立修复清单。重新核对时采用保守迁移：只有项目及证据仍可安全对应时才保留结论，不会把匹配不明确的旧记录悄悄接到新项目上。
+v0.3.1 面向首次 X 发布优化现有体验：可直接运行的示例成为首要操作，并在首屏预告结果中的三处差异；专用 1200 × 630 社交卡、canonical URL、Open Graph、X/Twitter 卡片和 favicon 让分享链接易于识别；源码、隐私与反馈入口保持可见，移动端交互控件高度不小于 44 CSS 像素。
+
+本次仍保留 v0.3.0 的人工审阅和交接流程：自动事实异常、必保项异常和改写新增事实进入同一个队列；每项可记录人工结论、可选备注和可选期望修复，只有“确认需处理”的项目会进入独立修复清单。重新核对时采用保守迁移：只有项目及证据仍可安全对应时才保留结论，不会把匹配不明确的旧记录悄悄接到新项目上。
 
 你可以主动导出或导入本地 `.keepfacts.json` 会话，以转移当前草稿、上次核对输入和人工记录。该文件有严格版本与字段约束，但属于未加密明文，详见 [会话格式 v1](docs/session-format-v1.md)。
 
-v0.3.0 没有扩张 v0.2.1 的事实识别引擎或公开评测语料，因此不表示识别范围或准确率已经提高。它适合检查 AI 转换前后已识别硬事实是否保真；即使“已提取事实保留率”为 100%，也不代表所有说法真实、所有事实都已识别或全文语义完全保留。
+v0.3.1 没有扩张 v0.3.0 的事实识别引擎或公开评测语料，因此不表示识别范围或准确率已经提高。它适合检查 AI 转换前后已识别硬事实是否保真；即使“已提取事实保留率”为 100%，也不代表所有说法真实、所有事实都已识别或全文语义完全保留。
 
 - 日期和时间
 - 金额和百分比
@@ -59,7 +61,7 @@ KeepFacts 只检查能够精确提取的硬事实，不查证事实真假，也�
 需要 Node.js 22.13 或更高版本。
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -75,10 +77,17 @@ npm test
 npm run eval
 ```
 
-安装 Playwright 浏览器后运行 Chromium 浏览器与无障碍检查：
+一次运行发布元数据、Node 测试、人工评测、类型检查与生产构建：
+
+```bash
+npm run check
+```
+
+安装 Playwright Chromium 浏览器后，重新生成仓库中的社交分享图，并运行浏览器与无障碍检查：
 
 ```bash
 npx playwright install chromium
+npm run render:share-card
 npm run test:e2e
 ```
 

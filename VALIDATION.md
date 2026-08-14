@@ -14,8 +14,9 @@ English formats.
 Requirements: Node.js 22.13 or newer.
 
 ```bash
-npm install
-npm test
+npm ci
+npm run check
+npm run test:e2e:ci
 ```
 
 The data-driven corpus lives in
@@ -23,14 +24,18 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.3.0 snapshot
+## v0.3.1 release gates
 
-- 37 public validation cases
-- 73 passing Node unit, evaluation, performance, review, report, and session
-  tests
-- Chromium browser, keyboard, and accessibility checks across desktop and
-  390 px mobile projects run in CI; their pass/fail status is recorded by the
-  release run without fixing an E2E case count in this snapshot
+- 37 public validation cases; the fact cases are unchanged from v0.3.0
+- 76 passing Node unit, evaluation, performance, review, report, session, and
+  social-metadata tests
+- 42 Chromium browser, keyboard, and accessibility checks collected across
+  desktop and 390 px mobile projects: 41 pass, with one intentional desktop
+  skip for a mobile-only first-exposure assertion
+- Launch checks cover the example-first hero action, all three visible example
+  differences, canonical/Open Graph/X card and favicon metadata, visible
+  source/privacy/feedback links, and a minimum 44 CSS-pixel height for mobile
+  interactive controls
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
@@ -56,12 +61,14 @@ source facts recognized by the supported rules. It measures preserved matches
 within that extracted set; it is not extraction coverage, truth accuracy, or a
 full-document semantic score.
 
-v0.3.0 adds tests for one three-scope human-review queue, notes and expected
-fixes, confirmed-only fix-list output, conservative recheck migration, and
-strict plaintext session import/export. Human records remain separate from
-machine counts and retention. This release does not add recognizers or expand
-the public validation or evaluation corpora, so these workflow tests must not
-be interpreted as evidence of broader fact coverage or improved accuracy.
+The v0.3 review gates cover one three-scope human-review queue, notes and
+expected fixes, confirmed-only fix-list output, conservative recheck migration,
+and strict plaintext session import/export. v0.3.1 adds launch presentation,
+metadata, public-link, and mobile-target gates only. Human records remain
+separate from machine counts and retention. This release does not add
+recognizers or expand the public validation or evaluation corpora, so the new
+launch tests must not be interpreted as evidence of broader fact coverage or
+improved accuracy.
 
 ## Matching guarantees
 

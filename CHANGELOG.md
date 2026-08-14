@@ -2,6 +2,31 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.3.1] - 2026-08-14
+
+### Added
+
+- Add a reproducible 1200 × 630 launch card for link previews, together with
+  Open Graph, X/Twitter card, canonical URL, and favicon metadata.
+- Add visible links to the source repository, privacy guidance, and issue
+  feedback, with an explicit warning not to submit sensitive, private, or
+  confidential document text.
+- Add `npm run render:share-card` so contributors can reproduce the committed
+  social image from its checked-in renderer.
+
+### Changed
+
+- Make the ready-to-run example the first launch action and preview its three
+  concrete findings—a changed date, changed user count, and missing URL—before
+  asking visitors to paste private text.
+- Keep launch and mobile interactive controls at least 44 CSS pixels high,
+  including the example-first path and public project links.
+- Refresh the English and Simplified Chinese launch walkthroughs around the
+  shortest path from the example to a private comparison and explicit feedback.
+- Keep the v0.3.0 fact-recognition engine and public evaluation corpus
+  unchanged. v0.3.1 is launch polish and does not claim broader recognition or
+  improved accuracy.
+
 ## [0.3.0] - 2026-08-13
 
 ### Added

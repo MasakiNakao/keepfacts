@@ -45,6 +45,9 @@ import type {
 type Locale = "zh" | "en";
 type Filter = "all" | "actionable" | "review" | "preserved" | "added";
 const RESULT_PAGE_SIZE = 50;
+const SOURCE_URL = "https://github.com/MasakiNakao/keepfacts";
+const PRIVACY_URL = `${SOURCE_URL}/blob/main/SECURITY.md`;
+const FEEDBACK_URL = `${SOURCE_URL}/issues/new?template=bug_report.yml`;
 
 const examples = {
   zh: {
@@ -85,7 +88,16 @@ const copy = {
     intro:
       "在接受 AI 改写、总结或翻译前，对照可信原文找出被改变、遗漏或新增的日期、金额、数量和链接；它不查证事实真假。",
     checkOwnText: "核对我的文本",
-    viewExample: "查看示例结果",
+    viewExample: "30 秒看它抓出 3 处错误",
+    exampleProof: "示例中的三处变化",
+    proofDate: "9月15日 → 9月18日",
+    proofUsers: "100人 → 80人",
+    proofLink: "发布链接缺失",
+    trustLinks: "源码、隐私与反馈",
+    sourceCode: "查看源码",
+    privacyBoundaries: "隐私与边界",
+    reportDetectionIssue: "反馈漏检 / 误报",
+    feedbackSafety: "反馈时请勿提交敏感、私人或机密文本。",
     exampleMode: "示例模式",
     ownTextMode: "我的文本",
     exampleModeHint: "当前显示示例内容和示例结果。",
@@ -234,7 +246,17 @@ const copy = {
     intro:
       "Before accepting an AI rewrite, summary, or translation, compare it with a trusted source to catch changed, missing, or new exact facts. KeepFacts does not verify whether claims are true.",
     checkOwnText: "Check my text",
-    viewExample: "View example results",
+    viewExample: "See 3 errors in 30 seconds",
+    exampleProof: "Three changes in the example",
+    proofDate: "Sep 15 → Sep 18",
+    proofUsers: "100 users → 80 users",
+    proofLink: "Launch link missing",
+    trustLinks: "Source, privacy, and feedback",
+    sourceCode: "View source",
+    privacyBoundaries: "Privacy and boundaries",
+    reportDetectionIssue: "Report a missed fact / false positive",
+    feedbackSafety:
+      "Do not include sensitive, private, or confidential text in feedback.",
     exampleMode: "Example mode",
     ownTextMode: "My text",
     exampleModeHint: "You are viewing example content and results",
@@ -1484,29 +1506,60 @@ export default function Home() {
           <span>{t.titleB}</span>
         </h1>
         <p className="hero-copy">{t.intro}</p>
+        {isExampleMode && hasRun ? (
+          <ul className="hero-proof" aria-label={t.exampleProof}>
+            <li>{t.proofDate}</li>
+            <li>{t.proofUsers}</li>
+            <li>{t.proofLink}</li>
+          </ul>
+        ) : null}
         <div className="hero-actions">
-          <button
-            className="hero-primary-action"
-            type="button"
-            onClick={startOwnText}
-          >
-            {t.checkOwnText}
-          </button>
           {isExampleMode && hasRun ? (
+            <>
+              <button
+                className="hero-primary-action"
+                type="button"
+                onClick={viewExampleResults}
+              >
+                {t.viewExample}
+              </button>
+              <button
+                className="hero-secondary-action"
+                type="button"
+                onClick={startOwnText}
+              >
+                {t.checkOwnText}
+              </button>
+            </>
+          ) : (
             <button
-              className="hero-secondary-action"
+              className="hero-primary-action"
               type="button"
-              onClick={viewExampleResults}
+              onClick={startOwnText}
             >
-              {t.viewExample}
+              {t.checkOwnText}
             </button>
-          ) : null}
+          )}
         </div>
         <p className="locale-scope">{t.localeScope}</p>
         <p className="mobile-privacy-copy" data-testid="privacy-copy">
           <span className="privacy-dot" aria-hidden="true" />
           {t.mobilePrivacy}
         </p>
+        <div className="hero-trust">
+          <nav className="trust-links" aria-label={t.trustLinks}>
+            <a href={SOURCE_URL} target="_blank" rel="noreferrer">
+              {t.sourceCode}
+            </a>
+            <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
+              {t.privacyBoundaries}
+            </a>
+            <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
+              {t.reportDetectionIssue}
+            </a>
+          </nav>
+          <p className="feedback-safety">{t.feedbackSafety}</p>
+        </div>
       </section>
 
       <section className="checker" aria-label={t.eyebrow}>

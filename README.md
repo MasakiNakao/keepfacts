@@ -1,6 +1,6 @@
 # KeepFacts
 
-[简体中文](README.zh-CN.md) · [Live demo](https://masakinakao.github.io/keepfacts/)
+[简体中文](README.zh-CN.md) · [Live demo](https://masakinakao.github.io/keepfacts/?lang=en) · [Source](https://github.com/MasakiNakao/keepfacts) · [Privacy](SECURITY.md) · [Feedback](https://github.com/MasakiNakao/keepfacts/issues)
 
 [![Live demo](https://img.shields.io/badge/live-demo-0f5d46)](https://masakinakao.github.io/keepfacts/)
 [![CI](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml/badge.svg)](https://github.com/MasakiNakao/keepfacts/actions/workflows/ci.yml)
@@ -8,6 +8,8 @@
 [![License](https://img.shields.io/github/license/MasakiNakao/keepfacts)](LICENSE)
 
 **Change the wording, not the facts.**
+
+[![KeepFacts v0.3.1 — local exact-fact preflight for AI rewrites](public/keepfacts-share-v031.jpg)](https://masakinakao.github.io/keepfacts/?lang=en)
 
 KeepFacts is a small, privacy-first **exact-fact preservation checker** for AI
 rewrites, summaries, and translations. Compare a trusted source with the new
@@ -24,18 +26,21 @@ or upload your text; no account or AI API key is needed. Files you explicitly
 export are unencrypted plaintext, as described under
 [Privacy and limitations](#privacy-and-limitations).
 
-[![KeepFacts interface showing exact-fact comparison and human review decisions](docs/keepfacts-demo.jpg)](https://masakinakao.github.io/keepfacts/)
-
 ## Try it in 30 seconds
 
-1. Open the [live demo](https://masakinakao.github.io/keepfacts/).
-2. Paste the original text on the left and the rewrite on the right.
-3. Optionally add one must-preserve name or phrase per line.
-4. Select **Compare both texts** to create a fixed result. Work through the
+1. Open the [live demo](https://masakinakao.github.io/keepfacts/?lang=en) and
+   select the first action, **See 3 errors in 30 seconds**.
+2. See three concrete demo findings immediately: the release date changed, the
+   user count changed from 100 to 80, and the source URL is missing.
+3. Select **Check my text**, then paste the trusted source on the left and
+   the AI rewrite, summary, or translation on the right.
+4. Optionally add one must-preserve name or phrase per line, then select
+   **Compare both texts**. Work through the
    unified review queue, optionally add a note or expected fix, then copy the
    confirmed-only fix list or download the full Markdown report.
 5. Recheck after editing either text. To continue later, explicitly export and
-   re-import a local `.keepfacts.json` session.
+   re-import a local `.keepfacts.json` session. For non-sensitive feedback, use
+   the visible **Feedback** link and never include private document text.
 
 ## Why KeepFacts?
 
@@ -53,12 +58,19 @@ It is intentionally narrow:
 - its retention percentage covers only facts extracted from the source, not
   every factual statement the document may contain.
 
-## v0.3.0 scope
+## v0.3.1 launch scope
 
-v0.3.0 strengthens the human-review and handoff workflow. Automatic warnings,
-must-preserve anomalies, and facts introduced only in the rewrite now share one
-queue. Each item can carry a decision, optional note, and optional expected fix;
-only confirmed issues enter the standalone fix list. A conservative recheck
+v0.3.1 prepares the existing checker for its first X launch. The ready-to-run
+example is now the first call to action and previews the same three differences
+shown in its result. A dedicated 1200 × 630 social card, canonical URL, Open
+Graph and X/Twitter metadata, and favicon make shared links identifiable.
+Source, privacy, and feedback links stay visible, and mobile interactive
+controls are at least 44 CSS pixels high.
+
+The release retains the v0.3.0 human-review and handoff workflow. Automatic
+warnings, must-preserve anomalies, and facts introduced only in the rewrite now
+share one queue. Each item can carry a decision, optional note, and optional
+expected fix; only confirmed issues enter the standalone fix list. A conservative recheck
 migration preserves a decision only when the finding and its evidence still
 match safely, and never silently assigns an ambiguous old record to a new item.
 
@@ -68,9 +80,9 @@ file is strict, versioned, unencrypted plaintext; see
 [Session format v1](docs/session-format-v1.md).
 
 The fact-recognition engine and public evaluation corpus are unchanged from
-v0.2.1. This release does not demonstrate broader recognition or improved
-accuracy. Use KeepFacts to check whether recognized exact facts survive an AI
-transformation. A 100% extracted-fact retention result does not mean that every
+v0.3.0. This launch-polish release does not demonstrate broader recognition or
+improved accuracy. Use KeepFacts to check whether recognized exact facts survive
+an AI transformation. A 100% extracted-fact retention result does not mean that every
 claim is true, every fact was recognized, or the full meaning was preserved.
 
 ## Current checks
@@ -105,7 +117,7 @@ claim is true, every fact was recognized, or the full meaning was preserved.
 Requirements: Node.js 22.13 or newer.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -121,16 +133,25 @@ Run the manually annotated evaluation corpus:
 npm run eval
 ```
 
+Run release metadata, Node tests, evaluation, type checks, and the production
+build together:
+
+```bash
+npm run check
+```
+
 Create a production build:
 
 ```bash
 npm run build
 ```
 
-Run Chromium browser and accessibility checks after installing the Playwright browser:
+Install the Playwright Chromium browser, regenerate the committed social card,
+and run browser and accessibility checks:
 
 ```bash
 npx playwright install chromium
+npm run render:share-card
 npm run test:e2e
 ```
 

@@ -1,0 +1,46 @@
+{
+  "format": "keepfacts.session",
+  "schemaVersion": 1,
+  "exportedAt": "2026-08-13T09:30:00.000Z",
+  "generator": {
+    "appVersion": "0.3.0",
+    "commitSha": "a50782562b35975168bbb4d25027181ed2c6294d"
+  },
+  "privacy": {
+    "containsFullText": true,
+    "encrypted": false
+  },
+  "locale": "zh",
+  "editor": {
+    "source": "Alpha has 100 users. Keep Northstar. Draft 42.",
+    "revision": "Alpha has 80 users. Launch on 2026-09-15. Draft 42.",
+    "required": "Northstar"
+  },
+  "result": {
+    "input": {
+      "source": "Alpha has 100 users. Keep Northstar.",
+      "revision": "Alpha has 80 users. Launch on 2026-09-15.",
+      "required": "Northstar"
+    },
+    "reviewRecords": [
+      {
+        "key": "added:date-30-40",
+        "note": "Investigate launch date\n\tVerify source."
+      },
+      {
+        "key": "required:required-0-northstar",
+        "decision": "accepted"
+      },
+      {
+        "key": "source:number-10-13",
+        "decision": "confirmed",
+        "note": "Customer count changed",
+        "expectedFix": "Restore 100"
+      },
+      {
+        "key": "source:orphan",
+        "decision": "ignored"
+      }
+    ]
+  }
+}

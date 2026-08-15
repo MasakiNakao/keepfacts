@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing KeepFacts release tag to deploy (for example v0.1.6)
+        description: Existing KeepFacts release tag to deploy (for example vX.Y.Z)
         required: true
         type: string
 

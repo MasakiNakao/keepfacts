@@ -1,0 +1,27 @@
+name: Security contact request
+description: Request a private reporting channel without posting vulnerability details.
+title: "[Security contact request]"
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a public contact request, not a vulnerability report.
+
+        Do not include vulnerability details, proof-of-concept code, secrets, private document text, session files, or reports. 请勿在此公开 Issue 中填写漏洞细节、复现代码、密钥、私人文本、会话文件或报告。
+
+  - type: checkboxes
+    id: public_safety
+    attributes:
+      label: Public issue safety / 公开 Issue 安全确认
+      options:
+        - label: I have not included technical details or sensitive content. / 我没有填写技术细节或敏感内容。
+          required: true
+
+  - type: checkboxes
+    id: private_channel_request
+    attributes:
+      label: Contact request / 联系请求
+      options:
+        - label: Please provide a private channel for a security report. / 请提供用于安全报告的私密联系渠道。
+          required: true

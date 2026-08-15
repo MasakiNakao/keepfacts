@@ -1,10 +1,23 @@
-import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { access, readFile } from "node:fs/promises";
 
 const rootUrl = new URL("../", import.meta.url);
 
 async function readJson(relativePath) {
   const contents = await readFile(new URL(relativePath, rootUrl), "utf8");
   return JSON.parse(contents);
+}
+
+function readGitRevision(revision) {
+  try {
+    return execFileSync("git", ["rev-parse", revision], {
+      cwd: rootUrl,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
 }
 
 const [packageJson, packageLock, changelog] = await Promise.all([
@@ -66,6 +79,61 @@ if (isTagBuild) {
       `release tag ${String(tagName)} does not match package version ${expectedTag}`,
     );
   }
+
+  const tagCommit = readGitRevision(`${expectedTag}^{commit}`);
+  const headCommit = readGitRevision("HEAD");
+  if (!tagCommit) {
+    errors.push(`release tag ${expectedTag} cannot be resolved to a commit`);
+  } else if (!headCommit) {
+    errors.push("the checked-out HEAD commit cannot be resolved");
+  } else if (tagCommit !== headCommit) {
+    errors.push(
+      `release tag ${expectedTag} points to ${tagCommit}, not checked-out commit ${headCommit}`,
+    );
+  }
+}
+
+const buildCommit = process.env.VITE_COMMIT_SHA?.trim();
+if (buildCommit) {
+  const fullCommitPattern = /^[0-9a-f]{40}$/u;
+  const headCommit = readGitRevision("HEAD");
+
+  if (!fullCommitPattern.test(buildCommit)) {
+    errors.push(
+      `VITE_COMMIT_SHA must be a full lowercase 40-character Git SHA, received ${buildCommit}`,
+    );
+  } else if (!headCommit) {
+    errors.push("the checked-out HEAD commit cannot be resolved");
+  } else if (buildCommit !== headCommit) {
+    errors.push(
+      `VITE_COMMIT_SHA ${buildCommit} does not match checked-out commit ${headCommit}`,
+    );
+  }
+}
+
+const [indexHtml, shareCardRenderer] = await Promise.all([
+  readFile(new URL("index.html", rootUrl), "utf8"),
+  readFile(new URL("scripts/render-share-card.mjs", rootUrl), "utf8"),
+]);
+const evergreenShareImage = "keepfacts-share.jpg";
+const patchVersionPattern = /KeepFacts\s+v\d+\.\d+\.\d+/u;
+
+if (!indexHtml.includes(evergreenShareImage)) {
+  errors.push(`index.html does not reference ${evergreenShareImage}`);
+}
+if (patchVersionPattern.test(indexHtml)) {
+  errors.push("index.html social metadata must not hard-code a patch version");
+}
+if (!shareCardRenderer.includes(evergreenShareImage)) {
+  errors.push(`share-card renderer does not output ${evergreenShareImage}`);
+}
+if (patchVersionPattern.test(shareCardRenderer)) {
+  errors.push("share-card renderer must not hard-code a patch version");
+}
+try {
+  await access(new URL(`public/${evergreenShareImage}`, rootUrl));
+} catch {
+  errors.push(`public/${evergreenShareImage} is missing`);
 }
 
 if (errors.length > 0) {

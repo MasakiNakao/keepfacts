@@ -15,8 +15,8 @@ Requirements: Node.js 22.13 or newer.
 
 ```bash
 npm ci
-npm run check
-npm run test:e2e:ci
+npm run check:all
+npm audit --audit-level=high
 ```
 
 The data-driven corpus lives in
@@ -24,14 +24,15 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.3.1 release gates
+## v0.3.2 maintenance release gates
 
-- 37 public validation cases; the fact cases are unchanged from v0.3.0
-- 76 passing Node unit, evaluation, performance, review, report, session, and
-  social-metadata tests
-- 42 Chromium browser, keyboard, and accessibility checks collected across
-  desktop and 390 px mobile projects: 41 pass, with one intentional desktop
-  skip for a mobile-only first-exposure assertion
+- 37 public validation cases; the fact cases are unchanged from v0.3.1
+- 82/82 Node unit, evaluation, performance, review, report, session, and
+  social-metadata tests pass
+- 51 Chromium browser, keyboard, and accessibility checks pass across desktop
+  and 390 px mobile projects; one desktop run intentionally skips the
+  mobile-only first-exposure control check
+- The dependency audit must report no high- or critical-severity advisory
 - Launch checks cover the example-first hero action, all three visible example
   differences, canonical/Open Graph/X card and favicon metadata, visible
   source/privacy/feedback links, and a minimum 44 CSS-pixel height for mobile
@@ -45,6 +46,9 @@ facts. The test runner fails when any result changes unexpectedly.
   focus moved to the newly selected page.
 - Dense 100-, 300-, and 1,000-fact comparisons each have a five-second
   regression budget; 1,000 must-preserve entries have a one-second budget.
+- A comparison with 400 must-preserve entries and 100,000-character source and
+  rewrite texts has a five-second regression budget. Editor, Worker, and
+  schema-v1 session limits share one tested boundary contract.
 
 The corpus covers dates, times, money, percentages, measurements, numeric
 ranges, versions, URLs, emails, quoted text, standalone numbers, duplicate
@@ -63,12 +67,15 @@ full-document semantic score.
 
 The v0.3 review gates cover one three-scope human-review queue, notes and
 expected fixes, confirmed-only fix-list output, conservative recheck migration,
-and strict plaintext session import/export. v0.3.1 adds launch presentation,
-metadata, public-link, and mobile-target gates only. Human records remain
+and strict plaintext session import/export. v0.3.1 added launch presentation,
+metadata, public-link, and mobile-target gates. v0.3.2 is a feature-complete,
+pre-1.0 maintenance release that updates dependencies, governance, security
+contact guidance, evergreen social metadata, input/session boundary handling,
+long must-preserve performance, and retry-safe error feedback. Human records remain
 separate from machine counts and retention. This release does not add
-recognizers or expand the public validation or evaluation corpora, so the new
-launch tests must not be interpreted as evidence of broader fact coverage or
-improved accuracy.
+recognizers or expand the public validation or evaluation corpora, so its
+maintenance gates must not be interpreted as evidence of broader fact coverage
+or improved accuracy.
 
 ## Matching guarantees
 

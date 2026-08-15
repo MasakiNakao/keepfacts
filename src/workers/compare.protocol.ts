@@ -1,10 +1,7 @@
 import type { FactComparison } from "../lib/facts";
+import type { KeepFactsInput } from "../lib/input-limits";
 
-export interface CompareInput {
-  source: string;
-  revision: string;
-  required: string;
-}
+export type CompareInput = KeepFactsInput;
 
 export interface CompareWorkerRequest {
   type: "compare";

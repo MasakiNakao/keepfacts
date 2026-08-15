@@ -9,7 +9,7 @@
 
 **Change the wording, not the facts.**
 
-[![KeepFacts v0.3.1 — local exact-fact preflight for AI rewrites](public/keepfacts-share-v031.jpg)](https://masakinakao.github.io/keepfacts/?lang=en)
+[![KeepFacts — local exact-fact preflight for AI rewrites](public/keepfacts-share.jpg)](https://masakinakao.github.io/keepfacts/?lang=en)
 
 KeepFacts is a small, privacy-first **exact-fact preservation checker** for AI
 rewrites, summaries, and translations. Compare a trusted source with the new
@@ -58,14 +58,24 @@ It is intentionally narrow:
 - its retention percentage covers only facts extracted from the source, not
   every factual statement the document may contain.
 
-## v0.3.1 launch scope
+## Project status and v0.3.2 maintenance scope
 
-v0.3.1 prepares the existing checker for its first X launch. The ready-to-run
-example is now the first call to action and previews the same three differences
-shown in its result. A dedicated 1200 × 630 social card, canonical URL, Open
-Graph and X/Twitter metadata, and favicon make shared links identifiable.
-Source, privacy, and feedback links stay visible, and mobile interactive
-controls are at least 44 CSS pixels high.
+KeepFacts is feature-complete for its current documented browser workflow.
+v0.3.2 moves that workflow into stable maintenance while the project remains a
+pre-1.0 (`0.x`) release: this is not a KeepFacts v1 declaration or a promise of
+permanent API, file-format, or recognition compatibility. Only the latest
+tagged release is supported on a best-effort basis, with no LTS branch or
+response-time SLA. See [Privacy and limitations](#privacy-and-limitations) and
+the [security policy](SECURITY.md).
+
+Future patch releases are limited to security, bug, compatibility,
+accessibility, documentation, and release-infrastructure fixes. New product
+capabilities or recognizers require an explicitly scoped release and matching
+evidence. The ready-to-run example remains the first call to action and previews
+the same three differences shown in its result. The evergreen 1200 × 630 social
+card, canonical URL, Open Graph and X/Twitter metadata, and favicon make shared
+links identifiable. Source, privacy, and feedback links stay visible, and
+mobile interactive controls are at least 44 CSS pixels high.
 
 The release retains the v0.3.0 human-review and handoff workflow. Automatic
 warnings, must-preserve anomalies, and facts introduced only in the rewrite now
@@ -76,14 +86,17 @@ match safely, and never silently assigns an ambiguous old record to a new item.
 
 You can explicitly export or import a local `.keepfacts.json` session to move a
 draft, its last checked input, and human records between browser sessions. The
-file is strict, versioned, unencrypted plaintext; see
+file is strict, versioned, unencrypted plaintext. Its schema v1 identifies the
+session data format; it does not mean the KeepFacts product is v1. See
 [Session format v1](docs/session-format-v1.md).
 
-The fact-recognition engine and public evaluation corpus are unchanged from
-v0.3.0. This launch-polish release does not demonstrate broader recognition or
-improved accuracy. Use KeepFacts to check whether recognized exact facts survive
-an AI transformation. A 100% extracted-fact retention result does not mean that every
-claim is true, every fact was recognized, or the full meaning was preserved.
+The fact-recognition rules and public evaluation corpus are unchanged from
+v0.3.1. This maintenance release aligns editor and session limits, makes long
+must-preserve checks faster, and hardens failure recovery; it does not
+demonstrate broader recognition or improved accuracy. Use KeepFacts to check
+whether recognized exact facts survive an AI transformation. A 100%
+extracted-fact retention result does not mean that every claim is true, every
+fact was recognized, or the full meaning was preserved.
 
 ## Current checks
 
@@ -182,16 +195,21 @@ page is open, that working state remains in memory. Reports or session files you
 explicitly export may contain the text, contexts, decisions, notes, and expected
 fixes in plaintext.
 
-## Roadmap
+## Maintenance priorities
 
-- A reusable core package and CLI
-- More locales, currencies, and unit aliases
-- Browser extension and editor integrations
-- Contributor-authored recognizer plugins
+- Security and correctness fixes
+- Browser and dependency compatibility
+- Accessibility, documentation, and release reliability
+- Regression evidence for the current documented workflow
+
+New capabilities are not part of the maintenance roadmap. Any future proposal
+needs a separately scoped release and evidence appropriate to its claims.
 
 ## Contributing
 
-Bug reports and small, well-scoped recognizer improvements are welcome. When adding a rule, include tests for both a correct match and a likely false positive. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Bug reports and focused maintenance fixes are welcome. A recognizer proposal
+must be scoped outside a patch release and include tests for both a correct
+match and a likely false positive. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Privacy and limitations
 

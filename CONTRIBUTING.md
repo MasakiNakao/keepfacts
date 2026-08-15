@@ -2,6 +2,20 @@
 
 Thank you for helping KeepFacts catch factual drift more reliably.
 
+## Maintenance scope
+
+KeepFacts is feature-complete for its current documented browser workflow and
+is maintained as a pre-1.0 (`0.x`) project. Only the latest tagged release is
+supported on a best-effort basis; there is no LTS branch or response-time SLA.
+The session schema v1 is a data-format version, not a KeepFacts v1 product or
+compatibility promise.
+
+Patch contributions should stay within security, bug, compatibility,
+accessibility, documentation, and release-infrastructure fixes. Proposals for
+new product capabilities or fact recognizers need a separately scoped release,
+tests, and evaluation evidence rather than being folded into a maintenance
+patch.
+
 ## Before opening a pull request
 
 1. Keep the change focused on one fact type or one interface problem.
@@ -14,7 +28,7 @@ Thank you for helping KeepFacts catch factual drift more reliably.
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -23,6 +37,9 @@ new rules should remain explainable and must not send user text to a server.
 
 Please use fictional or public text in issues and tests. Do not submit personal,
 confidential, medical, financial, or customer information.
+
+Do not post vulnerability details or sensitive content in a public issue. See
+[SECURITY.md](SECURITY.md) for the currently available contact-request process.
 
 Evaluation annotations use JavaScript UTF-16 offsets and must satisfy
 `text.slice(start, end) === raw`. Mention IDs and source-to-rewrite relations

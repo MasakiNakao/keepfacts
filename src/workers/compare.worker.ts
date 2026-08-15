@@ -1,4 +1,5 @@
 import { compareFacts, extractFacts } from "../lib/facts";
+import { getKeepFactsInputLimitViolation } from "../lib/input-limits";
 import type {
   CompareWorkerRequest,
   CompareWorkerResponse,
@@ -13,6 +14,9 @@ workerScope.onmessage = ({ data }) => {
   if (data.type !== "compare") return;
 
   try {
+    if (getKeepFactsInputLimitViolation(data.input)) {
+      throw new RangeError("input-limit-exceeded");
+    }
     if (data.limits) {
       const requiredItems = data.input.required
         .split(/\r?\n/u)

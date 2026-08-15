@@ -2,6 +2,57 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.3.2] - 2026-08-15
+
+### Maintenance
+
+- Mark the current documented browser workflow as feature-complete and move the
+  pre-1.0 project into stable maintenance. Only the latest tagged release is
+  supported on a best-effort basis; there is no LTS branch or response-time
+  SLA.
+- Limit subsequent patch releases to security, bug, compatibility,
+  accessibility, documentation, and release-infrastructure fixes. A session
+  file's schema v1 is a data-format version, not a KeepFacts v1 product or
+  compatibility promise.
+- Update pinned patch dependencies within the existing React, React type, Vite
+  React plugin, and Node 22 type lines; intentionally defer TypeScript and Node
+  type major upgrades.
+- Make the Open Graph and X/Twitter title and share-card path evergreen so
+  future maintenance patches do not publish stale patch-version artwork. Keep
+  the v0.3.1 image available for already cached links.
+
+### Security
+
+- Document the currently available public security-contact-request fallback
+  without claiming that GitHub private vulnerability reporting is enabled.
+  Public issues must not contain vulnerability details, proof-of-concept code,
+  secrets, or private document text.
+
+### Fixed
+
+- Use one shared input-limit contract for the editor, comparison Worker, and
+  schema-v1 session import/export so a comparison that KeepFacts accepts can be
+  exported and restored under the same structural limits. Oversized work is
+  rejected before starting the Worker without replacing the last result or
+  human-review records.
+- Cache the normalized source and rewrite search views once per comparison
+  instead of rebuilding them for every must-preserve item. This keeps valid
+  long schema-v1 sessions below the guarded import timeout while preserving the
+  existing matching result.
+- Add a 30-second comparison/import failure guard with retry-safe cleanup,
+  distinguish first-run failures from failures that preserve an earlier
+  result, and correct the no-facts, empty-filter, and repeated screen-reader
+  feedback states.
+- Use one timestamp per report or session export, retain a byte-stable v0.3.0
+  schema-v1 compatibility fixture, and verify that release tags and injected
+  build commit SHAs resolve to the checked-out commit.
+
+### Scope
+
+- Keep the v0.3.1 fact-recognition rules and both public fact corpora unchanged.
+  The performance and lifecycle fixes do not change expected recognition
+  results, and v0.3.2 does not claim broader recognition or improved accuracy.
+
 ## [0.3.1] - 2026-08-14
 
 ### Added

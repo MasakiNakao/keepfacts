@@ -1,5 +1,14 @@
 import type { FactComparison } from "./facts.ts";
 import {
+  getKeepFactsInputLimitViolation,
+  KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH,
+  KEEPFACTS_MAX_REQUIRED_ITEMS,
+  KEEPFACTS_MAX_REQUIRED_LENGTH,
+  KEEPFACTS_MAX_TEXT_LENGTH,
+  type KeepFactsInput,
+  type KeepFactsInputLimitViolation,
+} from "./input-limits.ts";
+import {
   getReviewItems,
   type ReviewDecision,
   type ReviewRecord,
@@ -9,10 +18,14 @@ import {
 export const KEEPFACTS_SESSION_FORMAT = "keepfacts.session" as const;
 export const KEEPFACTS_SESSION_SCHEMA_VERSION = 1 as const;
 export const KEEPFACTS_SESSION_MAX_BYTES = 5 * 1024 * 1024;
-export const KEEPFACTS_SESSION_MAX_TEXT_LENGTH = 250_000;
-export const KEEPFACTS_SESSION_MAX_REQUIRED_LENGTH = 100_000;
-export const KEEPFACTS_SESSION_MAX_REQUIRED_ITEMS = 1_000;
-export const KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH = 500;
+// Schema-v1 compatibility aliases. Keep these exports stable for consumers that
+// adopted the original session-specific names.
+export const KEEPFACTS_SESSION_MAX_TEXT_LENGTH = KEEPFACTS_MAX_TEXT_LENGTH;
+export const KEEPFACTS_SESSION_MAX_REQUIRED_LENGTH =
+  KEEPFACTS_MAX_REQUIRED_LENGTH;
+export const KEEPFACTS_SESSION_MAX_REQUIRED_ITEMS = KEEPFACTS_MAX_REQUIRED_ITEMS;
+export const KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH =
+  KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH;
 export const KEEPFACTS_SESSION_MAX_REVIEW_RECORDS = 3_000;
 export const KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH = 1_024;
 export const KEEPFACTS_SESSION_MAX_REVIEW_TEXT_LENGTH = 500;
@@ -29,11 +42,7 @@ const REVIEW_DECISIONS = new Set<ReviewDecision>([
 
 export type KeepFactsSessionLocale = "zh" | "en";
 
-export interface KeepFactsSessionInput {
-  source: string;
-  revision: string;
-  required: string;
-}
+export type KeepFactsSessionInput = KeepFactsInput;
 
 export interface KeepFactsSessionReviewRecord extends ReviewRecord {
   key: string;
@@ -181,58 +190,35 @@ function normalizeReviewText(value: unknown, path: string) {
   return normalized || undefined;
 }
 
-function validateRequiredText(value: string, path: string) {
-  if (value.length > KEEPFACTS_SESSION_MAX_REQUIRED_LENGTH) {
-    fail(
-      "limit-exceeded",
-      path,
-      `must not exceed ${KEEPFACTS_SESSION_MAX_REQUIRED_LENGTH} UTF-16 code units`,
-    );
+function inputLimitMessage(violation: KeepFactsInputLimitViolation) {
+  switch (violation.reason) {
+    case "text-length":
+    case "required-length":
+      return `must not exceed ${violation.maximum} UTF-16 code units`;
+    case "required-items":
+      return `must not contain more than ${violation.maximum} non-empty items`;
+    case "required-item-length":
+      return `each item must not exceed ${violation.maximum} UTF-16 code units`;
   }
-
-  const items = value
-    .split(/\r?\n/u)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  if (items.length > KEEPFACTS_SESSION_MAX_REQUIRED_ITEMS) {
-    fail(
-      "limit-exceeded",
-      path,
-      `must not contain more than ${KEEPFACTS_SESSION_MAX_REQUIRED_ITEMS} non-empty items`,
-    );
-  }
-  if (
-    items.some(
-      (item) => item.length > KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH,
-    )
-  ) {
-    fail(
-      "limit-exceeded",
-      path,
-      `each item must not exceed ${KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH} UTF-16 code units`,
-    );
-  }
-  return value;
 }
 
 function validateInput(value: unknown, path: string): KeepFactsSessionInput {
   const input = requireObject(value, path);
   requireExactFields(input, ["source", "revision", "required"], [], path);
-  const source = requireLimitedString(
-    input.source,
-    `${path}.source`,
-    KEEPFACTS_SESSION_MAX_TEXT_LENGTH,
-  );
-  const revision = requireLimitedString(
-    input.revision,
-    `${path}.revision`,
-    KEEPFACTS_SESSION_MAX_TEXT_LENGTH,
-  );
-  const required = validateRequiredText(
-    requireString(input.required, `${path}.required`),
-    `${path}.required`,
-  );
-  return { source, revision, required };
+  const candidate = {
+    source: requireString(input.source, `${path}.source`),
+    revision: requireString(input.revision, `${path}.revision`),
+    required: requireString(input.required, `${path}.required`),
+  };
+  const violation = getKeepFactsInputLimitViolation(candidate);
+  if (violation) {
+    fail(
+      "limit-exceeded",
+      `${path}.${violation.field}`,
+      inputLimitMessage(violation),
+    );
+  }
+  return candidate;
 }
 
 function validateReviewRecord(

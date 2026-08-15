@@ -6,12 +6,13 @@ import path from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const indexPath = path.join(root, "index.html");
-const imagePath = path.join(root, "public", "keepfacts-share-v031.jpg");
+const imagePath = path.join(root, "public", "keepfacts-share.jpg");
+const legacyImagePath = path.join(root, "public", "keepfacts-share-v031.jpg");
 const faviconPath = path.join(root, "public", "favicon.svg");
 const canonicalUrl = "https://masakinakao.github.io/keepfacts/";
-const imageUrl = `${canonicalUrl}keepfacts-share-v031.jpg`;
+const imageUrl = `${canonicalUrl}keepfacts-share.jpg`;
 const faviconUrl = `${canonicalUrl}favicon.svg`;
-const socialTitle = "KeepFacts v0.3.1 — AI 改写后，30 秒核对硬事实";
+const socialTitle = "KeepFacts — AI 改写后，30 秒核对硬事实";
 const socialDescription =
   "本地核对 AI 改写、摘要与翻译中被改变、遗漏或新增的日期、数字、金额和必保内容。无需登录，文本不会上传。";
 
@@ -121,6 +122,8 @@ test("publishes complete canonical and social metadata", () => {
   );
   assert.equal(html.includes("twitter:site"), false);
   assert.equal(html.includes("twitter:creator"), false);
+  assert.doesNotMatch(html, /keepfacts-share-v\d+/iu);
+  assert.doesNotMatch(socialTitle, /\bv?\d+\.\d+\.\d+\b/iu);
 });
 
 test("ships a valid 1200 by 630 JPEG share image below five MiB", () => {
@@ -128,6 +131,7 @@ test("ships a valid 1200 by 630 JPEG share image below five MiB", () => {
   assert.ok(image.byteLength > 0);
   assert.ok(image.byteLength < 5 * 1024 * 1024);
   assert.deepEqual(jpegDimensions(image), { width: 1200, height: 630 });
+  assert.equal(statSync(legacyImagePath).isFile(), true);
 });
 
 test("keeps the share-card renderer self-contained and reproducible", () => {
@@ -137,7 +141,7 @@ test("keeps the share-card renderer self-contained and reproducible", () => {
   );
   for (const text of [
     "KeepFacts",
-    "v0.3.1",
+    "硬事实核对",
     "AI 改写后",
     "30 秒",
     "9月15日",
@@ -152,6 +156,8 @@ test("keeps the share-card renderer self-contained and reproducible", () => {
   ]) {
     assert.ok(renderer.includes(text), `renderer must contain ${text}`);
   }
+  assert.doesNotMatch(renderer, /\bv?\d+\.\d+\.\d+\b/iu);
+  assert.equal(renderer.includes("keepfacts-share-v031.jpg"), false);
   assert.match(renderer, /viewport:\s*\{\s*width:\s*1200,\s*height:\s*630\s*\}/u);
   assert.equal(/https?:\/\//u.test(renderer), false);
 });

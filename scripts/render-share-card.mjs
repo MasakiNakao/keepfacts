@@ -5,7 +5,7 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const output = path.join(root, "public", "keepfacts-share-v031.jpg");
+const output = path.join(root, "public", "keepfacts-share.jpg");
 
 const html = String.raw`<!doctype html>
 <html lang="zh-CN">
@@ -116,7 +116,7 @@ const html = String.raw`<!doctype html>
         letter-spacing: -0.04em;
       }
 
-      .version {
+      .product-tag {
         background: var(--paper-deep);
         border: 1px solid var(--line);
         border-radius: 999px;
@@ -292,7 +292,7 @@ const html = String.raw`<!doctype html>
         <div class="brand">
           <span class="mark">K</span>
           <span class="brand-name">KeepFacts</span>
-          <span class="version">v0.3.1</span>
+          <span class="product-tag">硬事实核对</span>
         </div>
         <h1>AI 改写后，<br /><strong>30 秒</strong>核对硬事实</h1>
         <p class="lead">找出被改变、遗漏或新增的日期、数字与必保内容，再交付。</p>

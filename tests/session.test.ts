@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { compareFacts } from "../src/lib/facts.ts";
+import {
+  KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH,
+  KEEPFACTS_MAX_REQUIRED_ITEMS,
+  KEEPFACTS_MAX_REQUIRED_LENGTH,
+  KEEPFACTS_MAX_TEXT_LENGTH,
+} from "../src/lib/input-limits.ts";
 import { getReviewItems } from "../src/lib/review.ts";
 import {
   KEEPFACTS_SESSION_FORMAT,
@@ -78,6 +85,63 @@ function expectSessionError(
     return true;
   });
 }
+
+test("keeps schema-v1 limit aliases tied to the shared input contract", () => {
+  assert.equal(KEEPFACTS_SESSION_MAX_TEXT_LENGTH, KEEPFACTS_MAX_TEXT_LENGTH);
+  assert.equal(
+    KEEPFACTS_SESSION_MAX_REQUIRED_LENGTH,
+    KEEPFACTS_MAX_REQUIRED_LENGTH,
+  );
+  assert.equal(
+    KEEPFACTS_SESSION_MAX_REQUIRED_ITEMS,
+    KEEPFACTS_MAX_REQUIRED_ITEMS,
+  );
+  assert.equal(
+    KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH,
+    KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH,
+  );
+});
+
+test("loads and reconciles the historical v0.3.0 schema-v1 fixture", () => {
+  const fixture = readFileSync(
+    new URL("./fixtures/session-v1-v030.keepfacts.json", import.meta.url),
+    "utf8",
+  );
+  const session = parseKeepFactsSession(fixture);
+  assert.equal(session.schemaVersion, 1);
+  assert.equal(session.generator.appVersion, "0.3.0");
+  assert.equal(
+    session.generator.commitSha,
+    "a50782562b35975168bbb4d25027181ed2c6294d",
+  );
+  assert.notDeepEqual(session.editor, session.result?.input);
+  assert.equal(serializeKeepFactsSession(session), fixture);
+
+  assert.ok(session.result);
+  const comparison = compareFacts(
+    session.result.input.source,
+    session.result.input.revision,
+    session.result.input.required,
+  );
+  const reconciled = reconcileKeepFactsReviewRecords(
+    session.result.reviewRecords,
+    comparison,
+  );
+  assert.equal(reconciled.restoredCount, 3);
+  assert.equal(reconciled.discardedCount, 1);
+  assert.equal(Object.getPrototypeOf(reconciled.reviewRecords), null);
+  assert.deepEqual(reconciled.reviewRecords, Object.assign(Object.create(null), {
+    "added:date-30-40": {
+      note: "Investigate launch date\n\tVerify source.",
+    },
+    "required:required-0-northstar": { decision: "accepted" },
+    "source:number-10-13": {
+      decision: "confirmed",
+      note: "Customer count changed",
+      expectedFix: "Restore 100",
+    },
+  }));
+});
 
 test("serializes schema v1 deterministically and parses a UTF-8 BOM", () => {
   const session = validSession();

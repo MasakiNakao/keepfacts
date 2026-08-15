@@ -40,3 +40,37 @@ test("checks 1000 must-preserve entries within the input-feedback budget", () =>
     `must-preserve check took ${elapsed.toFixed(1)} ms; expected less than 1000 ms`,
   );
 });
+
+test("compares 400 must-preserve entries in 100k texts within budget", () => {
+  const alphaSuffix = (value: number) => {
+    let remaining = value;
+    let suffix = "";
+    do {
+      suffix = String.fromCharCode(97 + (remaining % 26)) + suffix;
+      remaining = Math.floor(remaining / 26) - 1;
+    } while (remaining >= 0);
+    return suffix;
+  };
+  const terms = Array.from(
+    { length: 400 },
+    (_, index) => `RequiredToken${alphaSuffix(index)}`,
+  );
+  const evidence = terms.join(" ");
+  const targetLength = 100_000;
+  const padded = `${evidence} ${"background ".repeat(
+    Math.ceil((targetLength - evidence.length) / "background ".length),
+  )}`.slice(0, targetLength);
+  assert.equal(padded.length, targetLength);
+
+  const started = performance.now();
+  const comparison = compareFacts(padded, padded, terms.join("\n"));
+  const elapsed = performance.now() - started;
+
+  assert.equal(comparison.requiredCount, terms.length);
+  assert.equal(comparison.requiredPreservedCount, terms.length);
+  assert.equal(comparison.requiredMissingCount, 0);
+  assert.ok(
+    elapsed < 5_000,
+    `400-entry must-preserve comparison took ${elapsed.toFixed(1)} ms; expected less than 5000 ms`,
+  );
+});

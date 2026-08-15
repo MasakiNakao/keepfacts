@@ -12,6 +12,12 @@ import {
   formatLocalDate,
 } from "./lib/report";
 import {
+  getKeepFactsInputLimitViolation,
+  KEEPFACTS_MAX_REQUIRED_LENGTH,
+  KEEPFACTS_MAX_TEXT_LENGTH,
+  type KeepFactsInputLimitViolation,
+} from "./lib/input-limits";
+import {
   getFixList,
   getNextPendingReviewKey,
   getReviewItems,
@@ -45,6 +51,7 @@ import type {
 type Locale = "zh" | "en";
 type Filter = "all" | "actionable" | "review" | "preserved" | "added";
 const RESULT_PAGE_SIZE = 50;
+const WORKER_TIMEOUT_MS = 30_000;
 const SOURCE_URL = "https://github.com/MasakiNakao/keepfacts";
 const PRIVACY_URL = `${SOURCE_URL}/blob/main/SECURITY.md`;
 const FEEDBACK_URL = `${SOURCE_URL}/issues/new?template=bug_report.yml`;
@@ -118,9 +125,25 @@ const copy = {
     clear: "清空",
     compare: "对照两版",
     comparing: "正在核对…",
-    compareFailed: "核对未完成，请重试。上次结果已保留。",
+    compareFailed: "核对未完成，请重试。",
+    compareTimedOut: "核对超过 30 秒，已停止。请重试。",
     compareLimitExceeded:
-      "每侧最多核对 1,000 项已提取事实，必保项最多 1,000 条。请拆分文本后重试；上次结果已保留。",
+      "每侧最多核对 1,000 项已提取事实，必保项最多 1,000 条。请拆分文本后重试。",
+    inputLimitFallback:
+      "输入超过可处理上限。请缩短原文、改写稿或必保项后重试。",
+    inputSourceTooLong: (maximum: number) =>
+      `原文最多 ${maximum.toLocaleString("en-US")} 个字符，请缩短后重试。`,
+    inputRevisionTooLong: (maximum: number) =>
+      `改写稿最多 ${maximum.toLocaleString("en-US")} 个字符，请缩短后重试。`,
+    inputRequiredTooLong: (maximum: number) =>
+      `必须保留的内容合计最多 ${maximum.toLocaleString("en-US")} 个字符，请缩短后重试。`,
+    inputRequiredItemsTooMany: (maximum: number) =>
+      `必须保留的内容最多 ${maximum.toLocaleString("en-US")} 条，请删除部分条目后重试。`,
+    inputRequiredItemTooLong: (line: number, maximum: number) =>
+      `必须保留的内容第 ${line.toLocaleString("en-US")} 行最多 ${maximum.toLocaleString("en-US")} 个字符，请缩短后重试。`,
+    previousResultPreserved: "上次结果已保留。",
+    sessionInputLimit: (detail: string) =>
+      `无法导出会话：${detail} 当前内容未更改。`,
     compareHint: "点击后生成一份固定结果；修改内容后请重新核对",
     resultsOutdated: "输入内容已更改，以下仍是上次核对结果。请重新核对后再导出报告。",
     resultTitle: "核对结果",
@@ -217,8 +240,11 @@ const copy = {
     nextPage: "下一页",
     pageStatus: (page: number, pages: number, total: number) =>
       `第 ${page}/${pages} 页，共 ${total} 项`,
-    emptyTitle: "还没有可核对的事实",
-    emptyBody: "请在左右两侧粘贴文本，或载入示例查看效果。",
+    emptyNoFactsTitle: "未识别到可核对的硬事实",
+    emptyNoFactsBody:
+      "当前文本中未识别到日期、金额、数量、单位、邮箱或链接等硬事实。请调整文本后重新核对，或载入示例。",
+    emptyFilterTitle: "当前筛选没有项目",
+    emptyFilterBody: "此筛选下没有可显示的自动事实，请选择其他筛选项。",
     preservedNote: "改写稿中找到等价事实",
     possibleChange: "可能改成了",
     missingNote: "改写稿中未找到对应事实",
@@ -231,7 +257,6 @@ const copy = {
     comparisonContext: "查看原文与改写语境",
     disclaimer:
       "KeepFacts 只比较两版文本中可精确提取的硬事实，不联网查证事实真假，也不判断全文语义。黄色项目需要人工确认。",
-    footerPrefix: "实验版",
     footer: "确定性规则 · 无追踪代码",
     homeLabel: "KeepFacts 首页",
     documentTitle: "KeepFacts — 措辞可以改变，事实不该走样",
@@ -277,10 +302,25 @@ const copy = {
     clear: "Clear",
     compare: "Compare both texts",
     comparing: "Checking…",
-    compareFailed:
-      "The check did not finish. Try again; the previous result is unchanged.",
+    compareFailed: "The check did not finish. Try again.",
+    compareTimedOut: "The check exceeded 30 seconds and was stopped. Try again.",
     compareLimitExceeded:
-      "Each side supports up to 1,000 extracted facts and 1,000 must-preserve items. Split the text and try again; the previous result is unchanged.",
+      "Each side supports up to 1,000 extracted facts and 1,000 must-preserve items. Split the text and try again.",
+    inputLimitFallback:
+      "The input exceeds the processing limit. Shorten the source, rewrite, or must-preserve content and try again.",
+    inputSourceTooLong: (maximum: number) =>
+      `Source supports up to ${maximum.toLocaleString("en-US")} characters. Shorten it and try again.`,
+    inputRevisionTooLong: (maximum: number) =>
+      `Rewrite supports up to ${maximum.toLocaleString("en-US")} characters. Shorten it and try again.`,
+    inputRequiredTooLong: (maximum: number) =>
+      `Must-preserve content supports up to ${maximum.toLocaleString("en-US")} characters in total. Shorten it and try again.`,
+    inputRequiredItemsTooMany: (maximum: number) =>
+      `Must-preserve content supports up to ${maximum.toLocaleString("en-US")} items. Remove some items and try again.`,
+    inputRequiredItemTooLong: (line: number, maximum: number) =>
+      `Line ${line.toLocaleString("en-US")} of must-preserve content supports up to ${maximum.toLocaleString("en-US")} characters. Shorten it and try again.`,
+    previousResultPreserved: "The previous result is unchanged.",
+    sessionInputLimit: (detail: string) =>
+      `The session cannot be exported: ${detail} Current work is unchanged.`,
     compareHint: "Creates a fixed result. Recheck after editing either text.",
     resultsOutdated:
       "The inputs changed. These are still the previous results; recheck before exporting.",
@@ -381,8 +421,11 @@ const copy = {
     nextPage: "Next",
     pageStatus: (page: number, pages: number, total: number) =>
       `Page ${page} of ${pages}, ${total} items`,
-    emptyTitle: "No comparable facts yet",
-    emptyBody: "Paste text into both fields, or load the example to see it work.",
+    emptyNoFactsTitle: "No comparable exact facts detected",
+    emptyNoFactsBody:
+      "No dates, amounts, quantities, units, emails, or links were detected. Edit the text and recheck, or load the example.",
+    emptyFilterTitle: "No items in this filter",
+    emptyFilterBody: "This filter has no automatic facts to show. Choose another filter.",
     preservedNote: "Equivalent fact found in the rewrite",
     possibleChange: "Possibly changed to",
     missingNote: "No corresponding fact found in the rewrite",
@@ -396,7 +439,6 @@ const copy = {
     comparisonContext: "View source and rewrite context",
     disclaimer:
       "KeepFacts compares exact, extractable facts between two texts. It does not verify truth or judge the full meaning. Yellow items need human review.",
-    footerPrefix: "Experimental",
     footer: "Deterministic rules · No tracking",
     homeLabel: "KeepFacts home",
     documentTitle: "KeepFacts — Change the wording, not the facts",
@@ -683,6 +725,7 @@ export default function Home() {
   const importSequence = useRef(0);
   const importTimeout = useRef<number | undefined>(undefined);
   const workerRef = useRef<Worker | null>(null);
+  const comparisonTimeout = useRef<number | undefined>(undefined);
   const requestSequence = useRef(0);
   const pendingRef = useRef<
     | {
@@ -697,6 +740,27 @@ export default function Home() {
   const t = copy[locale];
   localeRef.current = locale;
 
+  const inputLimitMessage = (violation: KeepFactsInputLimitViolation) => {
+    switch (violation.reason) {
+      case "text-length":
+        return violation.field === "source"
+          ? t.inputSourceTooLong(violation.maximum)
+          : t.inputRevisionTooLong(violation.maximum);
+      case "required-length":
+        return t.inputRequiredTooLong(violation.maximum);
+      case "required-items":
+        return t.inputRequiredItemsTooMany(violation.maximum);
+      case "required-item-length":
+        return t.inputRequiredItemTooLong(
+          (violation.itemIndex ?? 0) + 1,
+          violation.maximum,
+        );
+    }
+  };
+
+  const preservePreviousResult = (message: string, hadPrevious: boolean) =>
+    hadPrevious ? `${message} ${t.previousResultPreserved}` : message;
+
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
     document.title = t.documentTitle;
@@ -709,6 +773,9 @@ export default function Home() {
       }
       workerRef.current?.terminate();
       importWorkerRef.current?.terminate();
+      if (comparisonTimeout.current !== undefined) {
+        window.clearTimeout(comparisonTimeout.current);
+      }
       if (importTimeout.current !== undefined) {
         window.clearTimeout(importTimeout.current);
       }
@@ -772,6 +839,10 @@ export default function Home() {
 
   const cancelPendingComparison = () => {
     requestSequence.current += 1;
+    if (comparisonTimeout.current !== undefined) {
+      window.clearTimeout(comparisonTimeout.current);
+      comparisonTimeout.current = undefined;
+    }
     workerRef.current?.terminate();
     workerRef.current = null;
     pendingRef.current = undefined;
@@ -911,6 +982,14 @@ export default function Home() {
       return;
     }
     const input = { source, revision, required };
+    const inputViolation = getKeepFactsInputLimitViolation(input);
+    if (inputViolation) {
+      setComparisonError(
+        preservePreviousResult(inputLimitMessage(inputViolation), hasRun),
+      );
+      setComparisonFeedback("");
+      return;
+    }
     const requestId = ++requestSequence.current;
     const previous = hasRun
       ? { input: checkedInput, comparison }
@@ -924,7 +1003,12 @@ export default function Home() {
         { type: "module", name: "keepfacts-compare" },
       );
     } catch {
-      setComparisonError(copy[localeRef.current].compareFailed);
+      const currentCopy = copy[localeRef.current];
+      setComparisonError(
+        previous
+          ? `${currentCopy.compareFailed} ${currentCopy.previousResultPreserved}`
+          : currentCopy.compareFailed,
+      );
       setComparisonFeedback("");
       return;
     }
@@ -935,15 +1019,27 @@ export default function Home() {
       pendingRef.current.requestId === requestId;
     const finishError = (message?: string) => {
       if (!isCurrent()) return;
+      if (comparisonTimeout.current !== undefined) {
+        window.clearTimeout(comparisonTimeout.current);
+        comparisonTimeout.current = undefined;
+      }
       worker.terminate();
       workerRef.current = null;
       pendingRef.current = undefined;
       setBusy(false);
       const currentCopy = copy[localeRef.current];
-      setComparisonError(
-        message === "comparison-limit-exceeded"
+      const baseMessage =
+        message === "input-limit-exceeded"
+          ? currentCopy.inputLimitFallback
+          : message === "comparison-limit-exceeded"
           ? currentCopy.compareLimitExceeded
-          : currentCopy.compareFailed,
+          : message === "comparison-timeout"
+            ? currentCopy.compareTimedOut
+            : currentCopy.compareFailed;
+      setComparisonError(
+        previous
+          ? `${baseMessage} ${currentCopy.previousResultPreserved}`
+          : baseMessage,
       );
       setComparisonFeedback("");
     };
@@ -955,6 +1051,10 @@ export default function Home() {
         return;
       }
 
+      if (comparisonTimeout.current !== undefined) {
+        window.clearTimeout(comparisonTimeout.current);
+        comparisonTimeout.current = undefined;
+      }
       worker.terminate();
       workerRef.current = null;
       pendingRef.current = undefined;
@@ -1036,6 +1136,10 @@ export default function Home() {
     setBusy(true);
     setComparisonError("");
     setComparisonFeedback(t.comparing);
+    comparisonTimeout.current = window.setTimeout(
+      () => finishError("comparison-timeout"),
+      WORKER_TIMEOUT_MS,
+    );
     const request: CompareWorkerRequest = {
       type: "compare",
       requestId,
@@ -1056,15 +1160,19 @@ export default function Home() {
     setReportFeedback(message);
     setReviewAnnouncement(message);
     reportFeedbackTimer.current = window.setTimeout(() => {
-      setReportFeedback("");
+      setReportFeedback((current) => (current === message ? "" : current));
+      setReviewAnnouncement((current) =>
+        current === message ? "" : current,
+      );
       reportFeedbackTimer.current = undefined;
     }, 2400);
   };
 
-  const reportMarkdown = () =>
+  const reportMarkdown = (generatedAt: Date) =>
     buildMarkdownReport(comparison, locale, {
       appVersion: APP_VERSION,
       commitSha: APP_COMMIT_SHA,
+      generatedAt,
       reviewRecords,
     });
 
@@ -1146,8 +1254,9 @@ export default function Home() {
     }
   };
   const copyReport = async () => {
+    const generatedAt = new Date();
     try {
-      await navigator.clipboard.writeText(reportMarkdown());
+      await navigator.clipboard.writeText(reportMarkdown(generatedAt));
       showReportFeedback(t.copied);
     } catch {
       showReportFeedback(t.copyFailed);
@@ -1170,13 +1279,14 @@ export default function Home() {
   };
 
   const downloadReport = () => {
-    const blob = new Blob([reportMarkdown()], {
+    const generatedAt = new Date();
+    const blob = new Blob([reportMarkdown(generatedAt)], {
       type: "text/markdown;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `keepfacts-report-${formatLocalDate(new Date())}.md`;
+    link.download = `keepfacts-report-${formatLocalDate(generatedAt)}.md`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1185,11 +1295,19 @@ export default function Home() {
   };
 
   const exportSession = () => {
+    const input = { source, revision, required };
+    const inputViolation = getKeepFactsInputLimitViolation(input);
+    if (inputViolation) {
+      setSessionFeedback("");
+      setSessionError(t.sessionInputLimit(inputLimitMessage(inputViolation)));
+      return;
+    }
     if (!window.confirm(t.exportSessionConfirm)) return;
+    const exportedAt = new Date();
     const session: KeepFactsSessionV1 = {
       format: "keepfacts.session",
       schemaVersion: KEEPFACTS_SESSION_SCHEMA_VERSION,
-      exportedAt: new Date().toISOString(),
+      exportedAt: exportedAt.toISOString(),
       generator: { appVersion: APP_VERSION, commitSha: APP_COMMIT_SHA },
       privacy: { containsFullText: true, encrypted: false },
       locale,
@@ -1226,7 +1344,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `keepfacts-session-${new Date()
+      link.download = `keepfacts-session-${exportedAt
         .toISOString()
         .replace(/[-:]/gu, "")
         .replace(/\.\d{3}Z$/u, "Z")}.keepfacts.json`;
@@ -1398,7 +1516,7 @@ export default function Home() {
     };
     worker.onerror = fail;
     worker.onmessageerror = fail;
-    importTimeout.current = window.setTimeout(fail, 15_000);
+    importTimeout.current = window.setTimeout(fail, WORKER_TIMEOUT_MS);
     const request: CompareWorkerRequest = {
       type: "compare",
       requestId,
@@ -1600,6 +1718,7 @@ export default function Home() {
               ref={sourceInput}
               aria-label={t.source}
               value={source}
+              maxLength={KEEPFACTS_MAX_TEXT_LENGTH}
               onChange={(event) => updateInput(setSource, event.target.value)}
               placeholder={t.placeholderSource}
               spellCheck="false"
@@ -1620,6 +1739,7 @@ export default function Home() {
             <textarea
               aria-label={t.revision}
               value={revision}
+              maxLength={KEEPFACTS_MAX_TEXT_LENGTH}
               onChange={(event) => updateInput(setRevision, event.target.value)}
               placeholder={t.placeholderRevision}
               spellCheck="false"
@@ -1635,6 +1755,7 @@ export default function Home() {
           <textarea
             aria-label={t.required}
             value={required}
+            maxLength={KEEPFACTS_MAX_REQUIRED_LENGTH}
             onChange={(event) => updateInput(setRequired, event.target.value)}
             placeholder={t.requiredPlaceholder}
             spellCheck="false"
@@ -2075,8 +2196,16 @@ export default function Home() {
             {visibleCount === 0 ? (
               <div className="empty-state">
                 <span aria-hidden="true">◎</span>
-                <h3>{t.emptyTitle}</h3>
-                <p>{t.emptyBody}</p>
+                <h3>
+                  {total + comparison.addedFacts.length === 0
+                    ? t.emptyNoFactsTitle
+                    : t.emptyFilterTitle}
+                </h3>
+                <p>
+                  {total + comparison.addedFacts.length === 0
+                    ? t.emptyNoFactsBody
+                    : t.emptyFilterBody}
+                </p>
               </div>
             ) : null}
             </div>
@@ -2119,7 +2248,7 @@ export default function Home() {
       <footer>
         <span>KeepFacts</span>
         <p>
-          {t.footerPrefix} v{APP_VERSION} · {t.footer}
+          v{APP_VERSION} · {t.footer}
           {APP_COMMIT_SHA !== "local" ? (
             <span
               className="commit-sha"

@@ -1019,11 +1019,13 @@ function findRequired(revision: string, required: string) {
   return -1;
 }
 
-function findRequiredInText(text: string, normalized: string) {
-  const normalizedText = normalizeRequired(text);
-  const normalizedStart = findRequired(normalizedText, normalized);
-  if (normalizedStart === -1) return undefined;
+interface RequiredSearchView {
+  normalizedText: string;
+  starts: number[];
+  ends: number[];
+}
 
+function buildRequiredSearchView(text: string): RequiredSearchView {
   let collapsed = "";
   const starts: number[] = [];
   const ends: number[] = [];
@@ -1050,6 +1052,14 @@ function findRequiredInText(text: string, normalized: string) {
       ends.push(end);
     }
   }
+  return { normalizedText: collapsed, starts, ends };
+}
+
+function findRequiredInView(view: RequiredSearchView, normalized: string) {
+  const normalizedStart = findRequired(view.normalizedText, normalized);
+  if (normalizedStart === -1) return undefined;
+
+  const { starts, ends } = view;
   const rawStart = starts[normalizedStart] ?? 0;
   const rawEnd = ends[normalizedStart + normalized.length - 1] ?? rawStart;
   return { start: rawStart, end: rawEnd };
@@ -1082,72 +1092,77 @@ function compareRequiredFacts(
   source: string,
   revision: string,
 ): ComparedFact[] {
-  return requiredLines(required).map(({ raw, normalized }, index) => {
-      const sourceOccurrence = findRequiredInText(source, normalized);
-      const revisionOccurrence = findRequiredInText(revision, normalized);
-      const presentInSource = sourceOccurrence !== undefined;
-      const preserved = revisionOccurrence !== undefined;
-      const sourceStart = sourceOccurrence?.start ?? 0;
-      const sourceEnd = sourceOccurrence?.end ?? raw.length;
-      const revisionStart = revisionOccurrence?.start ?? 0;
-      const revisionEnd = revisionOccurrence?.end ?? raw.length;
-      const base: Fact = {
-        id: `required-${index}-${normalized}`,
-        kind: "required",
-        raw,
-        normalized,
-        valid: true,
-        start: presentInSource ? sourceStart : 0,
-        end: sourceEnd,
-        context: presentInSource
-          ? makeContext(source, sourceStart, sourceEnd)
-          : raw,
-      };
-      const sourceMatch = presentInSource
-        ? { ...base, raw: source.slice(sourceStart, sourceEnd) }
-        : undefined;
+  const lines = requiredLines(required);
+  if (!lines.length) return [];
 
-      if (!presentInSource) {
-        return {
-          ...base,
-          status: "review",
-          reviewReason: "not-in-source",
-          matched: preserved
-            ? {
-                ...base,
-                id: `required-revision-${index}-${normalized}`,
-                raw: revision.slice(revisionStart, revisionEnd),
-                start: revisionStart,
-                end: revisionEnd,
-                context: makeContext(revision, revisionStart, revisionEnd),
-              }
-            : undefined,
-        };
-      }
+  const sourceView = buildRequiredSearchView(source);
+  const revisionView = buildRequiredSearchView(revision);
+  return lines.map(({ raw, normalized }, index) => {
+    const sourceOccurrence = findRequiredInView(sourceView, normalized);
+    const revisionOccurrence = findRequiredInView(revisionView, normalized);
+    const presentInSource = sourceOccurrence !== undefined;
+    const preserved = revisionOccurrence !== undefined;
+    const sourceStart = sourceOccurrence?.start ?? 0;
+    const sourceEnd = sourceOccurrence?.end ?? raw.length;
+    const revisionStart = revisionOccurrence?.start ?? 0;
+    const revisionEnd = revisionOccurrence?.end ?? raw.length;
+    const base: Fact = {
+      id: `required-${index}-${normalized}`,
+      kind: "required",
+      raw,
+      normalized,
+      valid: true,
+      start: presentInSource ? sourceStart : 0,
+      end: sourceEnd,
+      context: presentInSource
+        ? makeContext(source, sourceStart, sourceEnd)
+        : raw,
+    };
+    const sourceMatch = presentInSource
+      ? { ...base, raw: source.slice(sourceStart, sourceEnd) }
+      : undefined;
 
-      if (!preserved) {
-        return {
-          ...base,
-          status: "review",
-          reviewReason: "missing",
-          sourceMatch,
-        };
-      }
-
+    if (!presentInSource) {
       return {
         ...base,
-        status: "preserved",
-        sourceMatch,
-        matched: {
-          ...base,
-          id: `required-match-${index}-${normalized}`,
-          raw: revision.slice(revisionStart, revisionEnd),
-          start: revisionStart,
-          end: revisionEnd,
-          context: makeContext(revision, revisionStart, revisionEnd),
-        },
+        status: "review",
+        reviewReason: "not-in-source",
+        matched: preserved
+          ? {
+              ...base,
+              id: `required-revision-${index}-${normalized}`,
+              raw: revision.slice(revisionStart, revisionEnd),
+              start: revisionStart,
+              end: revisionEnd,
+              context: makeContext(revision, revisionStart, revisionEnd),
+            }
+          : undefined,
       };
-    });
+    }
+
+    if (!preserved) {
+      return {
+        ...base,
+        status: "review",
+        reviewReason: "missing",
+        sourceMatch,
+      };
+    }
+
+    return {
+      ...base,
+      status: "preserved",
+      sourceMatch,
+      matched: {
+        ...base,
+        id: `required-match-${index}-${normalized}`,
+        raw: revision.slice(revisionStart, revisionEnd),
+        start: revisionStart,
+        end: revisionEnd,
+        context: makeContext(revision, revisionStart, revisionEnd),
+      },
+    };
+  });
 }
 
 export function compareFacts(

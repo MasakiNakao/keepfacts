@@ -9,7 +9,6 @@ import {
 import {
   buildFixListMarkdown,
   buildMarkdownReport,
-  formatLocalDate,
 } from "./lib/report";
 import {
   getKeepFactsInputLimitViolation,
@@ -25,6 +24,7 @@ import {
   getReviewOrder,
   migrateReviewRecords,
   orderReviewQueue,
+  reconcileReviewRecords,
   reviewDecisionKey,
   summarizeReviews,
   updateReviewRecord,
@@ -119,6 +119,11 @@ const copy = {
     required: "必须保留的内容",
     requiredHint: "可选：每行填写一个名称、术语或关键短语",
     requiredPlaceholder: "例如：品牌全称\n例如：不得更改的术语",
+    coverageTitle: "识别范围与已知限制",
+    coverageSupported:
+      "当前擅长：常见中英文日期、时间、金额、百分比、数量 / 单位、版本、邮箱、链接与数值范围。",
+    coverageLimited:
+      "暂不保证：电话号码、中文大写数字、本地化小数写法、科学计数法及全文语义。重要内容请加入“必须保留”，黄色结果仍需人工确认。",
     chars: "字符",
     placeholderSource: "在这里粘贴原文……",
     placeholderRevision: "在这里粘贴改写稿……",
@@ -151,11 +156,15 @@ const copy = {
     resultIntro: "先处理需要人工确认的项目，再判断是否接受这次改写。",
     resultReady: (automatic: number, review: number, added: number, required: number) =>
       `核对完成：自动事实 ${automatic} 项，需确认 ${review} 项，新增 ${added} 项，必须保留异常 ${required} 项。`,
-    copyReport: "复制报告",
-    downloadReport: "下载 Markdown",
     copied: "报告已复制",
     copyFailed: "复制失败，请使用下载功能",
     downloaded: "报告已下载",
+    copyDraftReport: "复制草稿报告",
+    downloadDraftReport: "下载草稿",
+    copyFinalReport: "复制完成报告",
+    downloadFinalReport: "下载完成报告",
+    copyNeutralReport: "复制核对报告",
+    downloadNeutralReport: "下载核对报告",
     scanned: "已提取硬事实",
     preserved: "已保留",
     review: "需确认",
@@ -180,11 +189,13 @@ const copy = {
     manualReview: "人工审阅进度",
     manualReviewHint:
       "三类异常集中处理；人工记录不会改变机器统计，重新核对时只保留证据仍可对应的记录。",
+    decisionGuide:
+      "确认需处理＝新稿需要修改；改写可接受＝已核对且变化可接受；不纳入本次审阅＝与本次交付无关，并不表示事实正确。",
     manualTotal: "待审阅项目",
     manualPending: "待处理",
     manualConfirmed: "确认需处理",
-    manualAccepted: "改写合理",
-    manualIgnored: "已忽略",
+    manualAccepted: "改写可接受",
+    manualIgnored: "不纳入本次审阅",
     reviewDraft: "审阅草稿",
     reviewNeedsChanges: "需要修改",
     reviewAcceptable: "审阅完成 · 无确认问题",
@@ -235,6 +246,10 @@ const copy = {
     importSession: "导入会话",
     sessionPrivacy:
       "会话文件包含完整原文、新稿、必保项和人工记录，是未加密明文；KeepFacts 不会自动保存或上传。",
+    sessionUnsaved:
+      "有未导出的更改：内容仅保存在当前页面内存中，刷新或关闭可能丢失。",
+    sessionCheckpoint:
+      "当前工作已与最近导入或导出的会话文件一致；浏览器仍不会自动保存。",
     exportSessionConfirm:
       "导出的会话文件包含完整文本和人工记录，且未加密。拿到文件的人可以直接读取。是否继续导出？",
     importSessionConfirm:
@@ -261,9 +276,14 @@ const copy = {
     notInSourceNote: "原文中未找到，无法作为必须保留项核对",
     notInSourceAddedNote: "原文中未找到；仅在改写稿出现，不算作已保留",
     addedNote: "只在改写稿中出现",
+    addedInvalidNote: "只在改写稿中出现，但该日期或时间值无效",
     sourceContext: "原文语境",
     revisionContext: "改写语境",
     comparisonContext: "查看原文与改写语境",
+    machineEvidence: "机器记录",
+    machineEvidenceHint: "完整保留自动事实与必保明细，默认收起以突出人工判断。",
+    machineEvidenceCount: (automatic: number, requiredCount: number) =>
+      `${automatic} 项自动事实${requiredCount ? ` · ${requiredCount} 项必保` : ""}`,
     disclaimer:
       "KeepFacts 只比较两版文本中可精确提取的硬事实，不联网查证事实真假，也不判断全文语义。黄色项目需要人工确认。",
     footer: "确定性规则 · 无追踪代码",
@@ -305,6 +325,11 @@ const copy = {
     required: "Must-preserve content",
     requiredHint: "Optional: one name, term, or key phrase per line",
     requiredPlaceholder: "Example: Full brand name\nExample: Required terminology",
+    coverageTitle: "Detection scope and known limits",
+    coverageSupported:
+      "Strongest today: common Chinese and English dates, times, money, percentages, quantities / units, versions, emails, URLs, and numeric ranges.",
+    coverageLimited:
+      "Not guaranteed: phone numbers, Chinese written numerals, locale-specific decimals, scientific notation, or full-document meaning. Add critical wording to Must-preserve; yellow findings still need human review.",
     chars: "characters",
     placeholderSource: "Paste the source text here…",
     placeholderRevision: "Paste the rewritten text here…",
@@ -338,11 +363,15 @@ const copy = {
     resultIntro: "Review flagged items before accepting the rewrite.",
     resultReady: (automatic: number, review: number, added: number, required: number) =>
       `Check complete: ${automatic} automatic facts, ${review} for review, ${added} new, and ${required} must-preserve issues.`,
-    copyReport: "Copy report",
-    downloadReport: "Download Markdown",
     copied: "Report copied",
     copyFailed: "Copy failed. Please download the report instead.",
     downloaded: "Report downloaded",
+    copyDraftReport: "Copy draft report",
+    downloadDraftReport: "Download draft",
+    copyFinalReport: "Copy completed report",
+    downloadFinalReport: "Download completed report",
+    copyNeutralReport: "Copy comparison report",
+    downloadNeutralReport: "Download report",
     scanned: "Extracted exact facts",
     preserved: "Preserved",
     review: "Review",
@@ -368,11 +397,13 @@ const copy = {
     manualReview: "Human review progress",
     manualReviewHint:
       "Review all three finding scopes in one queue. Human records never change machine metrics and migrate only when evidence can be matched safely.",
+    decisionGuide:
+      "Confirmed issue = the rewrite needs a fix; Acceptable change = reviewed and intentional; Out of this review = irrelevant to this delivery, not a claim that it is correct.",
     manualTotal: "Reviewable items",
     manualPending: "Pending",
     manualConfirmed: "Confirmed issue",
-    manualAccepted: "Acceptable rewrite",
-    manualIgnored: "Ignored",
+    manualAccepted: "Acceptable change",
+    manualIgnored: "Out of this review",
     reviewDraft: "Review draft",
     reviewNeedsChanges: "Needs changes",
     reviewAcceptable: "Review complete · no confirmed issues",
@@ -426,6 +457,10 @@ const copy = {
     importSession: "Import session",
     sessionPrivacy:
       "Session files contain the full source, rewrite, must-preserve content, and human records as unencrypted text. KeepFacts never autosaves or uploads them.",
+    sessionUnsaved:
+      "Unexported changes: this work exists only in the current page memory and may be lost if you refresh or close it.",
+    sessionCheckpoint:
+      "Current work matches the most recently imported or exported session file. The browser still does not autosave it.",
     exportSessionConfirm:
       "The session file contains the full text and human records and is not encrypted. Anyone with the file can read it. Continue exporting?",
     importSessionConfirm:
@@ -453,9 +488,16 @@ const copy = {
     notInSourceAddedNote:
       "Not found in the source; appearing only in the rewrite is not preservation",
     addedNote: "Appears only in the rewrite",
+    addedInvalidNote:
+      "Appears only in the rewrite, but this date or time value is invalid",
     sourceContext: "Source context",
     revisionContext: "Rewrite context",
     comparisonContext: "View source and rewrite context",
+    machineEvidence: "Machine record",
+    machineEvidenceHint:
+      "Complete automatic and must-preserve details remain available, collapsed by default so human decisions stay primary.",
+    machineEvidenceCount: (automatic: number, requiredCount: number) =>
+      `${automatic} automatic fact${automatic === 1 ? "" : "s"}${requiredCount ? ` · ${requiredCount} must-preserve` : ""}`,
     disclaimer:
       "KeepFacts compares exact, extractable facts between two texts. It does not verify truth or judge the full meaning. Yellow items need human review.",
     footer: "Deterministic rules · No tracking",
@@ -496,6 +538,36 @@ const kindLabels: Record<Locale, Record<FactKind, string>> = {
   },
 };
 
+function StatusIcon({ status }: { status: "preserved" | "review" | "added" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="status-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+    >
+      {status === "preserved" ? (
+        <path d="m5 12 4 4L19 7" />
+      ) : status === "added" ? (
+        <>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </>
+      ) : (
+        <>
+          <path d="M12 4 3.5 19h17L12 4Z" />
+          <path d="M12 9v4" />
+          <path d="M12 16h.01" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function ResultCard({
   fact,
   locale,
@@ -532,6 +604,7 @@ function ResultCard({
   const showRewriteValue =
     !added && rewriteFact !== undefined && rewriteFact.raw !== sourceFact?.raw;
   const reviewable = added || status === "review";
+  const invalidAdded = added && fact.valid === false;
   const decisionOptions: Array<{
     key: string;
     value?: ReviewDecision;
@@ -543,7 +616,9 @@ function ResultCard({
     { key: "ignored", value: "ignored", label: t.manualIgnored },
   ];
   const statusText =
-    status === "preserved"
+    invalidAdded
+      ? t.addedInvalidNote
+      : status === "preserved"
       ? t.preservedNote
       : status === "added"
         ? t.addedNote
@@ -558,9 +633,11 @@ function ResultCard({
               : t.missingNote;
 
   return (
-    <article className={`result-card result-${status}`}>
+    <article
+      className={`result-card result-${status}${invalidAdded ? " result-invalid-added" : ""}`}
+    >
       <div className="result-marker" aria-hidden="true">
-        {status === "preserved" ? "✓" : status === "added" ? "+" : "!"}
+        <StatusIcon status={invalidAdded ? "review" : status} />
       </div>
       <div className="result-content">
         {queuePosition && scopeLabel ? (
@@ -591,7 +668,11 @@ function ResultCard({
         </div>
         <p className="status-note">{statusText}</p>
         {reviewable && reviewScope && onReviewRecordChange ? (
-          <fieldset className="review-decision" disabled={reviewDisabled}>
+          <fieldset
+            className="review-decision"
+            disabled={reviewDisabled}
+            aria-describedby="review-decision-guide"
+          >
             <legend className="sr-only">
               {`${queuePosition ? `${queuePosition}. ` : ""}${scopeLabel ? `${scopeLabel}, ` : ""}${t.manualDecisionGroup}: ${sourceFact?.raw ?? fact.raw}`}
             </legend>
@@ -666,21 +747,38 @@ function ResultCard({
           )
         ) : null}
         {sourceFact?.context || rewriteFact?.context ? (
-          <details className="context-details">
-            <summary>{t.comparisonContext}</summary>
-            {sourceFact?.context ? (
-              <>
-                <strong>{t.sourceContext}</strong>
-                <p>{sourceFact.context}</p>
-              </>
-            ) : null}
-            {rewriteFact?.context ? (
-              <>
-                <strong>{t.revisionContext}</strong>
-                <p>{rewriteFact.context}</p>
-              </>
-            ) : null}
-          </details>
+          queuePosition ? (
+            <div className="review-evidence" aria-label={t.comparisonContext}>
+              {sourceFact?.context ? (
+                <div>
+                  <strong>{t.sourceContext}</strong>
+                  <p>{sourceFact.context}</p>
+                </div>
+              ) : null}
+              {rewriteFact?.context ? (
+                <div>
+                  <strong>{t.revisionContext}</strong>
+                  <p>{rewriteFact.context}</p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <details className="context-details">
+              <summary>{t.comparisonContext}</summary>
+              {sourceFact?.context ? (
+                <>
+                  <strong>{t.sourceContext}</strong>
+                  <p>{sourceFact.context}</p>
+                </>
+              ) : null}
+              {rewriteFact?.context ? (
+                <>
+                  <strong>{t.revisionContext}</strong>
+                  <p>{rewriteFact.context}</p>
+                </>
+              ) : null}
+            </details>
+          )
         ) : null}
       </div>
     </article>
@@ -724,6 +822,7 @@ export default function Home() {
   const [pendingReviewFocus, setPendingReviewFocus] = useState<string>();
   const [sessionFeedback, setSessionFeedback] = useState("");
   const [sessionError, setSessionError] = useState("");
+  const [hasUnsavedWork, setHasUnsavedWork] = useState(false);
   const [importingSession, setImportingSession] = useState(false);
   const [resultPage, setResultPage] = useState(1);
   const [requiredPage, setRequiredPage] = useState(1);
@@ -861,6 +960,24 @@ export default function Home() {
     (source !== checkedInput.source ||
       revision !== checkedInput.revision ||
       required !== checkedInput.required);
+  const hasMeaningfulOwnWork = Boolean(
+    !isExampleMode &&
+      (source.trim() ||
+        revision.trim() ||
+        required.trim() ||
+        Object.keys(reviewRecords).length),
+  );
+  const shouldWarnOnUnload = hasUnsavedWork && hasMeaningfulOwnWork;
+
+  useEffect(() => {
+    if (!shouldWarnOnUnload) return;
+    const protectUnsavedWork = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protectUnsavedWork);
+    return () => window.removeEventListener("beforeunload", protectUnsavedWork);
+  }, [shouldWarnOnUnload]);
 
   const cancelPendingComparison = () => {
     requestSequence.current += 1;
@@ -894,6 +1011,7 @@ export default function Home() {
     if (workerRef.current) cancelPendingComparison();
     setComparisonError("");
     setIsExampleMode(false);
+    setHasUnsavedWork(true);
     setter(value);
   };
 
@@ -916,6 +1034,7 @@ export default function Home() {
     url.searchParams.set("lang", nextLocale);
     window.history.replaceState(window.history.state, "", url);
     setLocale(nextLocale);
+    if (hasMeaningfulOwnWork) setHasUnsavedWork(true);
   };
 
   const loadExample = () => {
@@ -945,6 +1064,7 @@ export default function Home() {
     setComparisonFeedback("");
     setReviewAnnouncement("");
     setSessionError("");
+    setHasUnsavedWork(false);
     setFocusResultsAfterRun(false);
   };
 
@@ -969,6 +1089,7 @@ export default function Home() {
     setComparisonFeedback("");
     setReviewAnnouncement("");
     setSessionError("");
+    setHasUnsavedWork(false);
   };
 
   const startOwnText = () => {
@@ -996,6 +1117,7 @@ export default function Home() {
     setComparisonFeedback("");
     setReviewAnnouncement("");
     setSessionError("");
+    setHasUnsavedWork(false);
     setFocusSourceAfterReset(true);
   };
 
@@ -1132,6 +1254,7 @@ export default function Home() {
       setResultPage(1);
       setRequiredPage(1);
       setComparisonError("");
+      if (!isExampleMode) setHasUnsavedWork(true);
       setComparisonFeedback(
         previous &&
           (migration.retainedDecisions ||
@@ -1211,11 +1334,22 @@ export default function Home() {
     key: string,
     patch: Partial<ReviewRecord>,
   ) => {
+    setHasUnsavedWork(true);
     setReviewRecords((current) => updateReviewRecord(current, key, patch));
   };
 
   const manualSummary = summarizeReviews(comparison, reviewRecords);
   const reviewOutcome = getReviewOutcome(manualSummary);
+  const reportIsDraft = reviewOutcome === "draft";
+  const reportHasNoReview = reviewOutcome === "no-review";
+  const reportStatusSlug =
+    reportHasNoReview
+      ? "no-review"
+      : reviewOutcome === "draft"
+      ? "draft"
+      : reviewOutcome === "needs-changes"
+        ? "needs-changes"
+        : "complete";
   const currentReviewState = resultsOutdated ? "outdated" : reviewOutcome;
   const reviewOutcomeText = resultsOutdated
     ? t.reviewOutdated
@@ -1317,7 +1451,11 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `keepfacts-report-${formatLocalDate(generatedAt)}.md`;
+    const timestamp = generatedAt
+      .toISOString()
+      .replace(/[-:]/gu, "")
+      .replace(/\.\d{3}Z$/u, "Z");
+    link.download = `keepfacts-report-${reportStatusSlug}-${timestamp}.md`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1385,6 +1523,8 @@ export default function Home() {
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       setSessionFeedback(t.sessionExported);
       setSessionError("");
+      setReviewRecords(reconcileReviewRecords(comparison, reviewRecords));
+      setHasUnsavedWork(false);
     } catch {
       setSessionError(t.sessionExportFailed);
     }
@@ -1417,6 +1557,7 @@ export default function Home() {
     setComparisonError("");
     setComparisonFeedback("");
     setReviewAnnouncement("");
+    setHasUnsavedWork(false);
 
     if (!session.result || !importedComparison) {
       setCheckedInput({ source: "", revision: "", required: "" });
@@ -1439,6 +1580,7 @@ export default function Home() {
     setReviewQueueOrder(getReviewOrder(importedComparison));
     setHasRun(true);
     setFocusResultsAfterRun(true);
+    setHasUnsavedWork(reconciled.discardedCount > 0);
     setSessionFeedback(
       copy[nextLocale].sessionImported(
         reconciled.restoredCount,
@@ -1756,6 +1898,13 @@ export default function Home() {
             </button>
           )}
         </section>
+        <details className="coverage-note">
+          <summary>{t.coverageTitle}</summary>
+          <div>
+            <p>{t.coverageSupported}</p>
+            <p>{t.coverageLimited}</p>
+          </div>
+        </details>
         <div className="editor-grid">
           <article className="editor-card">
             <div className="editor-header">
@@ -1837,7 +1986,19 @@ export default function Home() {
             >
               <span className="button-step">03</span>
               {busy ? t.comparing : t.compare}
-              <span aria-hidden="true">→</span>
+              <svg
+                className="action-arrow"
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+              >
+                <path d="M4 10h11" />
+                <path d="m11 6 4 4-4 4" />
+              </svg>
             </button>
             <span>{t.compareHint}</span>
           </div>
@@ -1863,7 +2024,23 @@ export default function Home() {
             onChange={(event) => void importSessionFile(event)}
           />
         </div>
-        <p className="session-notice">{t.sessionPrivacy}</p>
+        <p
+          className={`session-notice ${shouldWarnOnUnload ? "session-notice-unsaved" : ""}`}
+          data-testid="session-save-state"
+          data-session-state={
+            shouldWarnOnUnload
+              ? "unsaved"
+              : hasMeaningfulOwnWork
+                ? "checkpoint"
+                : "empty"
+          }
+        >
+          {shouldWarnOnUnload
+            ? t.sessionUnsaved
+            : hasMeaningfulOwnWork
+              ? t.sessionCheckpoint
+              : t.sessionPrivacy}
+        </p>
         {sessionFeedback ? <p role="status">{sessionFeedback}</p> : null}
         {sessionError ? <p role="alert">{sessionError}</p> : null}
         {comparisonError ? (
@@ -1935,8 +2112,23 @@ export default function Home() {
             </div>
           </div>
 
-          <section className="review-workspace" aria-labelledby="review-workspace-title">
-            <header>
+          {manualSummary.total === 0 &&
+          total + comparison.addedFacts.length === 0 &&
+          comparison.requiredCount === 0 ? (
+            <div className="empty-state results-primary-empty">
+              <span className="empty-state-mark" aria-hidden="true" />
+              <h3>{t.emptyNoFactsTitle}</h3>
+              <p>{t.emptyNoFactsBody}</p>
+            </div>
+          ) : null}
+
+          <section
+            className="review-workspace"
+            aria-label={manualSummary.total ? undefined : t.reviewNoFindings}
+            aria-labelledby={manualSummary.total ? "review-workspace-title" : undefined}
+          >
+            {manualSummary.total ? (
+              <header>
               <h3
                 id="review-workspace-title"
                 ref={reviewWorkspaceHeading}
@@ -1945,30 +2137,45 @@ export default function Home() {
                 {t.manualReview}
               </h3>
               <p>{t.manualReviewHint}</p>
-            </header>
+              <p className="review-decision-guide" id="review-decision-guide">
+                {t.decisionGuide}
+              </p>
+              </header>
+            ) : null}
             <div className="review-toolbar">
               <div className="review-toolbar-main">
-                <div className="review-progress">
-                  {manualSummary.total ? (
+                {manualSummary.total ? (
+                  <div className="review-progress">
                     <progress
                       value={manualSummary.total - manualSummary.pending}
                       max={manualSummary.total}
                       aria-label={t.manualReview}
                       aria-valuetext={`${manualSummary.total - manualSummary.pending}/${manualSummary.total}`}
                     />
-                  ) : null}
-                  <strong>
-                    {manualSummary.total - manualSummary.pending}/{manualSummary.total}
-                  </strong>
+                    <strong>
+                      {manualSummary.total - manualSummary.pending}/{manualSummary.total}
+                    </strong>
+                    <span
+                      className={`review-outcome review-outcome-${currentReviewState}`}
+                      data-review-state={currentReviewState}
+                      data-testid="review-outcome"
+                      role="status"
+                      aria-live="polite"
+                      aria-label={`${t.reviewOutcomeLabel}: ${reviewOutcomeText}`}
+                    >
+                      {reviewOutcomeText}
+                    </span>
+                  </div>
+                ) : (
                   <span
-                    className={`review-outcome review-outcome-${currentReviewState}`}
-                    data-review-state={currentReviewState}
+                    className="review-no-findings"
                     data-testid="review-outcome"
-                    aria-label={`${t.reviewOutcomeLabel}: ${reviewOutcomeText}`}
+                    role="status"
+                    aria-live="polite"
                   >
-                    {reviewOutcomeText}
+                    {t.reviewNoFindings}
                   </span>
-                </div>
+                )}
                 <div className="review-actions" role="group" aria-label={t.reviewToolbar}>
                   {manualSummary.total ? (
                     <>
@@ -1990,12 +2197,32 @@ export default function Home() {
                       </button>
                     </>
                   ) : null}
-                  <button type="button" onClick={copyReport} disabled={busy || resultsOutdated}>
-                    {t.copyReport}
-                  </button>
-                  <button type="button" onClick={downloadReport} disabled={busy || resultsOutdated}>
-                    {t.downloadReport}
-                  </button>
+                  <div className="review-export-actions">
+                    <button
+                      type="button"
+                      data-review-action="copy-report"
+                      onClick={copyReport}
+                      disabled={busy || resultsOutdated}
+                    >
+                      {reportHasNoReview
+                        ? t.copyNeutralReport
+                        : reportIsDraft
+                          ? t.copyDraftReport
+                          : t.copyFinalReport}
+                    </button>
+                    <button
+                      type="button"
+                      data-review-action="download-report"
+                      onClick={downloadReport}
+                      disabled={busy || resultsOutdated}
+                    >
+                      {reportHasNoReview
+                        ? t.downloadNeutralReport
+                        : reportIsDraft
+                          ? t.downloadDraftReport
+                          : t.downloadFinalReport}
+                    </button>
+                  </div>
                 </div>
               </div>
               <span className="report-feedback">{reportFeedback}</span>
@@ -2054,7 +2281,9 @@ export default function Home() {
                                     : -1),
                             );
                             setReviewAnnouncement(
-                              `${scopeLabels[item.scope]} ${item.fact.raw}：${decisionLabel}。${t.remainingPending(remaining)}`,
+                              localeRef.current === "zh"
+                                ? `${scopeLabels[item.scope]} ${item.fact.raw}：${decisionLabel}。${t.remainingPending(remaining)}`
+                                : `${scopeLabels[item.scope]} ${item.fact.raw}: ${decisionLabel}. ${t.remainingPending(remaining)}`,
                             );
                           }
                         }}
@@ -2070,9 +2299,7 @@ export default function Home() {
                   );
                 })}
               </ol>
-            ) : (
-              <p className="machine-details-note">{t.reviewNoFindings}</p>
-            )}
+            ) : null}
             {orderedReviewItems.length > RESULT_PAGE_SIZE ? (
               <nav className="review-pagination" aria-label={t.reviewQueue}>
                 <button
@@ -2102,6 +2329,21 @@ export default function Home() {
             ) : null}
           </section>
 
+          <details className="machine-evidence" data-testid="machine-evidence">
+            <summary>
+              <span className="machine-evidence-title">
+                <strong>{t.machineEvidence}</strong>
+                <small>{t.machineEvidenceHint}</small>
+              </span>
+              <span className="machine-evidence-count">
+                {t.machineEvidenceCount(
+                  total + comparison.addedCount,
+                  comparison.requiredCount,
+                )}
+              </span>
+            </summary>
+            <div className="machine-evidence-body">
+              <p className="machine-details-note">{t.machineDetailsNote}</p>
           {comparison.requiredCount ? (
             <section className="required-results" aria-label={t.requiredResults}>
               <div className="required-results-heading">
@@ -2112,6 +2354,10 @@ export default function Home() {
                 </div>
                 <div
                   className="required-score"
+                  role={requiredRetention === null ? "status" : "meter"}
+                  aria-valuemin={requiredRetention === null ? undefined : 0}
+                  aria-valuemax={requiredRetention === null ? undefined : 100}
+                  aria-valuenow={requiredRetention ?? undefined}
                   aria-label={`${t.requiredRetention} ${requiredRetentionLabel}`}
                 >
                   <strong>{requiredRetentionLabel}</strong>
@@ -2140,7 +2386,6 @@ export default function Home() {
                   <strong>{comparison.requiredNotInSourceCount}</strong>
                 </div>
               </div>
-              <p className="machine-details-note">{t.machineDetailsNote}</p>
               <div className="required-result-list">
                 {pagedRequiredFacts.map((fact) => (
                   <ResultCard
@@ -2213,8 +2458,6 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <p className="machine-details-note">{t.machineDetailsNote}</p>
-
             <div className="result-list">
             {pagedItems.map(({ fact, added }) =>
               added ? (
@@ -2232,19 +2475,11 @@ export default function Home() {
                   />
                 ),
             )}
-            {visibleCount === 0 ? (
+            {visibleCount === 0 && total + comparison.addedFacts.length > 0 ? (
               <div className="empty-state">
-                <span aria-hidden="true">◎</span>
-                <h3>
-                  {total + comparison.addedFacts.length === 0
-                    ? t.emptyNoFactsTitle
-                    : t.emptyFilterTitle}
-                </h3>
-                <p>
-                  {total + comparison.addedFacts.length === 0
-                    ? t.emptyNoFactsBody
-                    : t.emptyFilterBody}
-                </p>
+                <span className="empty-state-mark" aria-hidden="true" />
+                <h3>{t.emptyFilterTitle}</h3>
+                <p>{t.emptyFilterBody}</p>
               </div>
             ) : null}
             </div>
@@ -2276,9 +2511,23 @@ export default function Home() {
               </nav>
             ) : null}
           </section>
+            </div>
+          </details>
 
           <aside className="disclaimer">
-            <span aria-hidden="true">i</span>
+            <span className="disclaimer-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 11v5" />
+                <path d="M12 8h.01" />
+              </svg>
+            </span>
             <p>{t.disclaimer}</p>
           </aside>
         </section>

@@ -122,7 +122,7 @@ apply independently to `editor` and `result.input` where both are present.
 | Non-empty must-preserve items | 1,000 |
 | One trimmed must-preserve item | 500 code units |
 | Review records | 3,000 |
-| Review-record key | 1,024 code units; not empty |
+| Review-record key | 1,024 code units for ordinary keys; a generated must-preserve key may be longer only up to the length derived from its normalized `result.input.required` item, with an absolute 9,022-code-unit guard; not empty |
 | `note` | 500 code units |
 | `expectedFix` | 500 code units |
 | Extracted facts in each `result.input` side | 1,000 |
@@ -135,6 +135,11 @@ sessions (`result: null`) are not compared during import.
 Must-preserve items are split on LF or CRLF, trimmed, and empty lines are not
 counted toward the 1,000-item limit. Notes and expected fixes are trimmed; LF
 and TAB are allowed, while other C0 and C1 control characters are rejected.
+Generated must-preserve review keys include an NFKC-normalized item. Because a
+valid 500-code-unit item can expand during NFKC normalization, the parser derives
+the accepted generated-key length from the corresponding checked input. This
+keeps schema-v1 files round-trippable without allowing unrelated oversized
+opaque keys; consumers must continue to treat keys as opaque.
 
 The parser also rejects malformed JSON, incorrect scalar or container types,
 missing fields, unknown fields, duplicate review keys, invalid enum values,

@@ -19,6 +19,10 @@ KeepFacts compares text with deterministic rules in the browser. It does not
 automatically save or upload source text, rewrites, must-preserve content, or
 human review records, and it does not intentionally send them to a server.
 Working state remains in page memory unless the user explicitly exports a file.
+The browser close/refresh warning is a best-effort loss-prevention prompt, not
+automatic saving or a backup. A displayed checkpoint means only that the page
+matched the most recently imported or exported session at that moment; later
+changes must be exported again.
 
 User-initiated exports are not encrypted:
 
@@ -47,6 +51,8 @@ KeepFacts v1 product or compatibility declaration.
 GitHub private vulnerability reporting is not currently enabled for this
 repository. Do not put vulnerability details, proof-of-concept code, secrets,
 private text, session files, or reports in a public issue.
+The public bug-report template's data-safety confirmation does not make an issue
+private and must not be used for sensitive reproduction text.
 
 Use the public
 [security contact request](https://github.com/MasakiNakao/keepfacts/issues/new?template=security_contact.yml)

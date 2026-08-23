@@ -609,6 +609,26 @@ function overlaps(start: number, end: number, facts: Fact[]) {
   return facts.some((fact) => start < fact.end && end > fact.start);
 }
 
+function isBinaryRangeSign(
+  definition: PatternDefinition,
+  scan: ScanView,
+  scanStart: number,
+  facts: Fact[],
+) {
+  if (
+    (definition.kind !== "money" && definition.kind !== "percentage") ||
+    scan.text[scanStart] !== "-"
+  ) {
+    return false;
+  }
+
+  const rawStart = scan.starts[scanStart] ?? 0;
+  return (
+    isAsciiDigit(scan.text[scanStart - 1]) ||
+    facts.some((fact) => fact.end === rawStart)
+  );
+}
+
 function makeContext(text: string, start: number, end: number) {
   const radius = 30;
   const before = text.slice(Math.max(0, start - radius), start);
@@ -626,8 +646,16 @@ export function extractFacts(text: string): Fact[] {
   for (const definition of PATTERNS) {
     definition.pattern.lastIndex = 0;
     for (const match of scan.text.matchAll(definition.pattern)) {
-      const scanStart = match.index ?? 0;
-      const scanEnd = scanStart + match[0].length;
+      const matchedScanStart = match.index ?? 0;
+      const scanEnd = matchedScanStart + match[0].length;
+      const scanStart = isBinaryRangeSign(
+        definition,
+        scan,
+        matchedScanStart,
+        facts,
+      )
+        ? matchedScanStart + 1
+        : matchedScanStart;
       const start = scan.starts[scanStart] ?? 0;
       const end = scan.ends[scanEnd - 1] ?? start;
       const raw = text.slice(start, end);
@@ -998,8 +1026,9 @@ function findRequired(revision: string, required: string) {
   const requiresBoundary = (character: string) =>
     /[\p{L}\p{N}\p{M}]/u.test(character) &&
     !/\p{Script=Han}/u.test(character);
-  const isWordCharacter = (character: string) =>
-    /[\p{L}\p{N}\p{M}]/u.test(character);
+  const blocksNonHanBoundary = (character: string) =>
+    /[\p{L}\p{N}\p{M}]/u.test(character) &&
+    !/\p{Script=Han}/u.test(character);
   const requiresLeftBoundary = requiresBoundary(requiredStart);
   const requiresRightBoundary = requiresBoundary(requiredEnd);
 
@@ -1008,9 +1037,9 @@ function findRequired(revision: string, required: string) {
     const before = revision.slice(0, start).match(/.$/u)?.[0] ?? "";
     const after = revision.slice(start + required.length).match(/^./u)?.[0] ?? "";
     const leftMatches =
-      !requiresLeftBoundary || !isWordCharacter(before);
+      !requiresLeftBoundary || !blocksNonHanBoundary(before);
     const rightMatches =
-      !requiresRightBoundary || !isWordCharacter(after);
+      !requiresRightBoundary || !blocksNonHanBoundary(after);
 
     if (leftMatches && rightMatches) return start;
     start = revision.indexOf(required, start + 1);

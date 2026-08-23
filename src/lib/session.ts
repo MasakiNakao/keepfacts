@@ -27,7 +27,17 @@ export const KEEPFACTS_SESSION_MAX_REQUIRED_ITEMS = KEEPFACTS_MAX_REQUIRED_ITEMS
 export const KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH =
   KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH;
 export const KEEPFACTS_SESSION_MAX_REVIEW_RECORDS = 3_000;
-export const KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH = 1_024;
+const KEEPFACTS_SESSION_LEGACY_MAX_REVIEW_KEY_LENGTH = 1_024;
+const KEEPFACTS_SESSION_MAX_NFKC_UTF16_EXPANSION = 18;
+const KEEPFACTS_SESSION_REQUIRED_REVIEW_KEY_PREFIX =
+  `required:required-${KEEPFACTS_MAX_REQUIRED_ITEMS - 1}-`;
+// Required fact IDs contain the NFKC-normalized item. Unicode's maximum NFKC
+// expansion factor for UTF-16 is 18x, so derive this structural limit from the
+// accepted required-item boundary instead of an unrelated fixed key length.
+export const KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH =
+  KEEPFACTS_SESSION_REQUIRED_REVIEW_KEY_PREFIX.length +
+  KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH *
+    KEEPFACTS_SESSION_MAX_NFKC_UTF16_EXPANSION;
 export const KEEPFACTS_SESSION_MAX_REVIEW_TEXT_LENGTH = 500;
 
 const SEMANTIC_VERSION_PATTERN =
@@ -221,9 +231,39 @@ function validateInput(value: unknown, path: string): KeepFactsSessionInput {
   return candidate;
 }
 
+function reviewKeyLimitsForInput(input: KeepFactsSessionInput) {
+  let maximum = KEEPFACTS_SESSION_LEGACY_MAX_REVIEW_KEY_LENGTH;
+  const extendedRequiredKeys = new Set<string>();
+  const seen = new Set<string>();
+  let index = 0;
+  for (const item of input.required.split(/\r?\n/u)) {
+    const raw = item.trim();
+    if (!raw) continue;
+    const normalized = raw
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    const key = `required:required-${index}-${normalized}`;
+    if (key.length > KEEPFACTS_SESSION_LEGACY_MAX_REVIEW_KEY_LENGTH) {
+      extendedRequiredKeys.add(key);
+    }
+    maximum = Math.max(maximum, key.length);
+    index += 1;
+  }
+  return {
+    extendedRequiredKeys,
+    maximum: Math.min(maximum, KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH),
+  };
+}
+
 function validateReviewRecord(
   value: unknown,
   path: string,
+  maximumKeyLength: number,
+  extendedRequiredKeys: ReadonlySet<string>,
 ): KeepFactsSessionReviewRecord {
   const record = requireObject(value, path);
   requireExactFields(
@@ -235,9 +275,19 @@ function validateReviewRecord(
   const key = requireLimitedString(
     record.key,
     `${path}.key`,
-    KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH,
+    maximumKeyLength,
     false,
   );
+  if (
+    key.length > KEEPFACTS_SESSION_LEGACY_MAX_REVIEW_KEY_LENGTH &&
+    !extendedRequiredKeys.has(key)
+  ) {
+    fail(
+      "limit-exceeded",
+      `${path}.key`,
+      "extended review key must match a normalized must-preserve item",
+    );
+  }
   let decision: ReviewDecision | undefined;
   if (Object.prototype.hasOwnProperty.call(record, "decision")) {
     const candidate = requireString(record.decision, `${path}.decision`);
@@ -264,6 +314,8 @@ function validateReviewRecord(
 function validateReviewRecords(
   value: unknown,
   path: string,
+  maximumKeyLength: number,
+  extendedRequiredKeys: ReadonlySet<string>,
 ): KeepFactsSessionReviewRecord[] {
   if (!Array.isArray(value)) {
     fail("invalid-type", path, "expected an array");
@@ -279,7 +331,12 @@ function validateReviewRecords(
   const keys = new Set<string>();
   const records: KeepFactsSessionReviewRecord[] = [];
   value.forEach((item, index) => {
-    const record = validateReviewRecord(item, `${path}[${index}]`);
+    const record = validateReviewRecord(
+      item,
+      `${path}[${index}]`,
+      maximumKeyLength,
+      extendedRequiredKeys,
+    );
     if (keys.has(record.key)) {
       fail(
         "duplicate-review-key",
@@ -360,11 +417,15 @@ function validateResult(
   if (value === null) return null;
   const result = requireObject(value, path);
   requireExactFields(result, ["input", "reviewRecords"], [], path);
+  const input = validateInput(result.input, `${path}.input`);
+  const reviewKeyLimits = reviewKeyLimitsForInput(input);
   return {
-    input: validateInput(result.input, `${path}.input`),
+    input,
     reviewRecords: validateReviewRecords(
       result.reviewRecords,
       `${path}.reviewRecords`,
+      reviewKeyLimits.maximum,
+      reviewKeyLimits.extendedRequiredKeys,
     ),
   };
 }

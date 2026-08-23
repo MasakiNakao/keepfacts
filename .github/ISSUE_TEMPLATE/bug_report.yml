@@ -3,17 +3,34 @@ description: Report a missed fact, false positive, or interface problem.
 title: "[Bug]: "
 labels: [bug]
 body:
+  - type: input
+    id: version
+    attributes:
+      label: KeepFacts version
+      description: Enter the version shown in the page header or footer.
+      placeholder: vX.Y.Z
+    validations:
+      required: true
+  - type: checkboxes
+    id: public_reproduction_safety
+    attributes:
+      label: Public reproduction safety
+      description: GitHub Issues are public. Never paste private, confidential, personal, medical, financial, customer, or otherwise sensitive text.
+      options:
+        - label: I confirm that this report uses only public, fictional, or fully sanitized minimal reproduction text.
+          required: true
   - type: textarea
     id: source
     attributes:
       label: Source text
-      description: Use a minimal, non-sensitive example.
+      description: Provide only the public, fictional, or fully sanitized minimum needed to reproduce the problem.
     validations:
       required: true
   - type: textarea
     id: rewrite
     attributes:
       label: Rewritten text
+      description: Provide only the public, fictional, or fully sanitized minimum needed to reproduce the problem.
     validations:
       required: true
   - type: textarea

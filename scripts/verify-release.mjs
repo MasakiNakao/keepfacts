@@ -20,10 +20,20 @@ function readGitRevision(revision) {
   }
 }
 
-const [packageJson, packageLock, changelog] = await Promise.all([
+const [
+  packageJson,
+  packageLock,
+  changelog,
+  readme,
+  readmeChinese,
+  validation,
+] = await Promise.all([
   readJson("package.json"),
   readJson("package-lock.json"),
   readFile(new URL("CHANGELOG.md", rootUrl), "utf8"),
+  readFile(new URL("README.md", rootUrl), "utf8"),
+  readFile(new URL("README.zh-CN.md", rootUrl), "utf8"),
+  readFile(new URL("VALIDATION.md", rootUrl), "utf8"),
 ]);
 
 const errors = [];
@@ -63,6 +73,46 @@ if (!changelogVersion) {
   errors.push(
     `CHANGELOG.md latest version ${changelogVersion} does not match package.json ${String(packageVersion)}`,
   );
+}
+
+const documentationVersionPattern =
+  "((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?)";
+const documentationVersionChecks = [
+  {
+    label: "README.md project status heading",
+    contents: readme,
+    pattern: new RegExp(
+      `^## Project status and v${documentationVersionPattern}(?=\\s|$)`,
+      "m",
+    ),
+  },
+  {
+    label: "README.zh-CN.md project status heading",
+    contents: readmeChinese,
+    pattern: new RegExp(
+      `^## 项目状态与 v${documentationVersionPattern}(?=\\s|$)`,
+      "mu",
+    ),
+  },
+  {
+    label: "VALIDATION.md release-gates heading",
+    contents: validation,
+    pattern: new RegExp(
+      `^## v${documentationVersionPattern}(?=\\s|$)[^\\n]*\\brelease gates\\s*$`,
+      "mi",
+    ),
+  },
+];
+
+for (const { label, contents, pattern } of documentationVersionChecks) {
+  const documentedVersion = contents.match(pattern)?.[1];
+  if (!documentedVersion) {
+    errors.push(`${label} is missing`);
+  } else if (documentedVersion !== packageVersion) {
+    errors.push(
+      `${label} version ${documentedVersion} does not match package.json ${String(packageVersion)}`,
+    );
+  }
 }
 
 const isTagBuild =

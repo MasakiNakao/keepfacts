@@ -193,6 +193,35 @@ test("keeps annotations but resets a decision when finding evidence changes", ()
   assert.equal(migrated.retainedAnnotations, 1);
 });
 
+test("resets a decision when the finding moves to a different subject", () => {
+  const previous = snapshot(
+    "Alpha budget is 100.",
+    "Alpha budget is 120.",
+  );
+  const next = snapshot(
+    "Beta budget is 100.",
+    "Beta budget is 120.",
+  );
+  const previousItem = getReviewItems(previous.comparison)[0];
+  const nextItem = getReviewItems(next.comparison)[0];
+  const migrated = migrateReviewRecords(previous, next, {
+    [previousItem.key]: {
+      decision: "accepted",
+      note: "Reviewed for Alpha",
+      expectedFix: "Keep Alpha's approved value",
+    },
+  });
+
+  assert.deepEqual(migrated.records[nextItem.key], {
+    note: "Reviewed for Alpha",
+    expectedFix: "Keep Alpha's approved value",
+  });
+  assert.equal(migrated.retainedDecisions, 0);
+  assert.equal(migrated.resetDecisions, 1);
+  assert.equal(migrated.retainedAnnotations, 1);
+  assert.equal(migrated.droppedRecords, 0);
+});
+
 test("drops ambiguous duplicate identities instead of crossing decisions", () => {
   const previous = snapshot(
     "Alpha has 100 users. Alpha has 100 users.",
@@ -429,9 +458,9 @@ test("exports human decisions without changing automatic metrics", () => {
   assert.match(report, /\| Reviewable items \| 3 \|/);
   assert.match(report, /\| Pending \| 1 \|/);
   assert.match(report, /\| Confirmed issue \| 1 \|/);
-  assert.match(report, /\| Acceptable rewrite \| 1 \|/);
+  assert.match(report, /\| Acceptable change \| 1 \|/);
   assert.match(report, /\*\*Human decision:\*\* `Confirmed issue`/);
-  assert.match(report, /\*\*Human decision:\*\* `Acceptable rewrite`/);
+  assert.match(report, /\*\*Human decision:\*\* `Acceptable change`/);
   assert.match(report, /\*\*Human decision:\*\* `Pending`/);
   assert.match(report, /\| Needs review \| 1 \|/);
   assert.match(report, /\| New in rewrite \| 1 \|/);
@@ -519,7 +548,7 @@ test("keeps legacy decisions compatible and omits an empty fix-list section", ()
     reviewDecisions: legacy,
   });
 
-  assert.match(report, /\*\*Human decision:\*\* `Acceptable rewrite`/);
+  assert.match(report, /\*\*Human decision:\*\* `Acceptable change`/);
   assert.match(report, /\*\*Note:\*\* None/);
   assert.match(report, /\*\*Expected fix:\*\* Not specified/);
   assert.doesNotMatch(report, /^## Fix list$/mu);

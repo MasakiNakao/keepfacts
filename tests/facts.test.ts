@@ -122,6 +122,38 @@ test("preserves signs and compound currency identity", () => {
   }
 });
 
+test("does not treat a compact range separator as a negative sign", () => {
+  assert.deepEqual(
+    extractFacts("Budget $100-$200; discount 10%-20%.")
+      .filter((fact) => fact.kind === "money" || fact.kind === "percentage")
+      .map(({ kind, raw, normalized }) => ({ kind, raw, normalized })),
+    [
+      { kind: "money", raw: "$100", normalized: "USD:100" },
+      { kind: "money", raw: "$200", normalized: "USD:200" },
+      { kind: "percentage", raw: "10%", normalized: "10" },
+      { kind: "percentage", raw: "20%", normalized: "20" },
+    ],
+  );
+
+  const comparison = compareFacts(
+    "Budget $100-$200; discount 10%-20%.",
+    "Budget $100 to $200; discount 10% to 20%.",
+  );
+  assert.equal(comparison.preservedCount, 4);
+  assert.equal(comparison.reviewCount, 0);
+  assert.equal(comparison.addedCount, 0);
+
+  assert.deepEqual(
+    extractFacts("Loss -$200; decline -20%.")
+      .filter((fact) => fact.kind === "money" || fact.kind === "percentage")
+      .map(({ raw, normalized }) => ({ raw, normalized })),
+    [
+      { raw: "-$200", normalized: "USD:-200" },
+      { raw: "-20%", normalized: "-20" },
+    ],
+  );
+});
+
 test("treats dotted calendar years as dates before bare versions", () => {
   const equivalent = compareFacts(
     "Deadline 2026.09.15.",
@@ -441,6 +473,19 @@ test("uses Unicode word boundaries without blocking embedded Chinese phrases", (
   assert.equal(comparison.requiredPreservedCount, 1);
 });
 
+test("allows non-Han must-preserve terms next to Chinese text", () => {
+  for (const required of ["VIP", "Project Atlas", "v2", "AI"]) {
+    const source = `请保留${required}计划。`;
+    const comparison = compareFacts(source, source, required);
+
+    assert.equal(countRequiredNotInSource(source, required), 0, required);
+    assert.equal(comparison.requiredNotInSourceCount, 0, required);
+    assert.equal(comparison.requiredPreservedCount, 1, required);
+  }
+
+  assert.equal(countRequiredNotInSource("Only Acmeology is available.", "Acme"), 1);
+});
+
 test("keeps must-preserve checks separate from automatic fact totals", () => {
   const comparison = compareFacts(
     "The budget is $100.",
@@ -552,6 +597,20 @@ test("builds a deterministic bilingual Markdown report", () => {
   assert.match(report, /\*\*改写值:\*\* `3万元`/);
   assert.match(report, /\*\*原文语境:\*\*/);
   assert.match(report, /\*\*改写语境:\*\*/);
+});
+
+test("labels an invalid date introduced only in the rewrite", () => {
+  const comparison = compareFacts(
+    "The launch date is undecided.",
+    "The launch date is 2026-02-30.",
+  );
+  const invalidAdded = comparison.addedFacts.find((fact) => fact.kind === "date");
+
+  assert.equal(invalidAdded?.valid, false);
+  assert.match(
+    buildMarkdownReport(comparison, "en"),
+    /Appears only in the rewrite, but this date or time value is invalid/,
+  );
 });
 
 test("preserves backticks in Markdown report values", () => {

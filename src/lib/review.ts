@@ -66,7 +66,7 @@ export interface FixListItem extends ReviewItem {
 }
 
 export const REVIEW_TEXT_LIMIT = 500;
-export const REVIEW_FINGERPRINT_VERSION = "keepfacts-review-fingerprint-v1";
+export const REVIEW_FINGERPRINT_VERSION = "keepfacts-review-fingerprint-v2";
 
 const REVIEW_DECISIONS = new Set<ReviewDecision>([
   "confirmed",
@@ -269,7 +269,7 @@ function contextTokens(value: string) {
     .filter((token) => !CONTEXT_STOPWORDS.has(token));
 }
 
-function localAnchor(text: string, fact: Fact) {
+function localContext(text: string, fact: Fact) {
   const radius = 96;
   const boundary = /[。！？.!?；;\n\r\t|/、，,]/gu;
   const beforeWindow = text.slice(Math.max(0, fact.start - radius), fact.start);
@@ -280,14 +280,31 @@ function localAnchor(text: string, fact: Fact) {
   }
   boundary.lastIndex = 0;
   const afterBoundary = boundary.exec(afterWindow);
-  const before = contextTokens(beforeWindow.slice(beforeStart));
-  const after = contextTokens(
-    afterBoundary ? afterWindow.slice(0, afterBoundary.index) : afterWindow,
-  );
+  return {
+    before: beforeWindow.slice(beforeStart),
+    after: afterBoundary
+      ? afterWindow.slice(0, afterBoundary.index)
+      : afterWindow,
+  };
+}
+
+function localAnchor(text: string, fact: Fact) {
+  const context = localContext(text, fact);
+  const before = contextTokens(context.before);
+  const after = contextTokens(context.after);
   return encodeFingerprint("identity", [
     "anchor",
     before.at(-1) ?? "",
     after[0] ?? "",
+  ]);
+}
+
+function localEvidence(text: string, fact: Fact) {
+  const context = localContext(text, fact);
+  return encodeFingerprint("evidence", [
+    "context",
+    canonicalText(context.before),
+    canonicalText(context.after),
   ]);
 }
 
@@ -315,6 +332,7 @@ function factEvidence(fact: Fact | undefined, text: string) {
     fact.normalized,
     fact.valid ? "valid" : "invalid",
     localAnchor(text, fact),
+    localEvidence(text, fact),
   ];
 }
 

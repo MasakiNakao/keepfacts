@@ -24,27 +24,36 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.3.3 maintenance release gates
+## v0.4.0 maintenance release gates
 
-- 37 public validation cases; the fact cases are unchanged from v0.3.1
-- 82/82 Node unit, evaluation, performance, review, report, session, and
+- 37 public validation cases; the validation-case file and manually annotated
+  evaluation corpus are unchanged from v0.3.1
+- 88/88 Node unit, evaluation, performance, review, report, session, and
   social-metadata tests pass
-- 55 Chromium browser, keyboard, and accessibility checks pass across desktop
-  and 390 px mobile projects; one desktop run intentionally skips the
-  mobile-only first-exposure control check
+- 64 Chromium browser, keyboard, and accessibility checks pass across desktop
+  and 390 px mobile projects; two cross-project runs are intentionally skipped
+  because one contract is mobile-only and one is desktop-landscape-only
 - The dependency audit must report no high- or critical-severity advisory
-- Launch checks cover the example-first hero action, all three visible example
-  differences, canonical/Open Graph/X card and favicon metadata, visible
-  source/privacy/feedback links, a single-line mobile retention label, and a
-  minimum 44 CSS-pixel height for mobile interactive controls including the
-  branded home link. Destructive-action checks protect unsaved user text and
-  review records, and the 390 px English first view keeps the comparison
-  workspace discoverable
+- Interface checks cover the example-first path, the human-review-first result
+  hierarchy, inline bilateral evidence, collapsed keyboard-accessible machine
+  details, explicit decision semantics, draft/completed report controls,
+  visible no-facts guidance, must-preserve focus treatment, compact short-
+  landscape review controls, and responsive one- or two-column mobile filters
+- Lifecycle checks cover the unexported-work state, native refresh/close guard,
+  session checkpoint state, destructive-action confirmations, stale-result
+  export lockout, worker failure/timeout recovery, and atomic session import
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
+- Targeted v0.4.0 regressions cover mixed Chinese/Latin must-preserve terms,
+  compact range separators versus true negatives, subject-sensitive review
+  migration, invalid values introduced only in the rewrite, and generated
+  schema-v1 keys expanded by NFKC normalization
 - CI runs the same unit, desktop, 390 px mobile, and accessibility checks on
-  every push and pull request
+  pushes to `main`, version-tag pushes, and pull requests targeting `main`
+- GitHub Pages deploys only from a version tag or an explicitly requested
+  existing release tag; release verification ties package metadata, current
+  documentation headings, tag, and injected full build SHA together
 - Automatic and must-preserve result cards are limited to 50 per page, with
   focus moved to the newly selected page.
 - Dense 100-, 300-, and 1,000-fact comparisons each have a five-second
@@ -68,20 +77,12 @@ source facts recognized by the supported rules. It measures preserved matches
 within that extracted set; it is not extraction coverage, truth accuracy, or a
 full-document semantic score.
 
-The v0.3 review gates cover one three-scope human-review queue, notes and
-expected fixes, confirmed-only fix-list output, conservative recheck migration,
-and strict plaintext session import/export. v0.3.1 added launch presentation,
-metadata, public-link, and mobile-target gates. v0.3.2 is a feature-complete,
-pre-1.0 maintenance release that updates dependencies, governance, security
-contact guidance, evergreen social metadata, input/session boundary handling,
-long must-preserve performance, and retry-safe error feedback. Human records remain
-separate from machine counts and retention. v0.3.3 adds a keyboard skip path,
-reduces first-view and pending-review density, and removes duplicate or
-unavailable interface actions without changing recognition behavior. This
-release does not add
-recognizers or expand the public validation or evaluation corpora, so its
-maintenance gates must not be interpreted as evidence of broader fact coverage
-or improved accuracy.
+The v0.4.0 gates retain the v0.3 review, session, performance, launch,
+responsive, and accessibility contracts while adding targeted regressions for
+the named fixes above. Human records remain separate from deterministic machine
+counts and retention. Neither public corpus was expanded for this release, so
+these gates must not be interpreted as evidence of broader fact coverage or
+improved general accuracy.
 
 ## Matching guarantees
 

@@ -100,6 +100,11 @@ test("keeps schema-v1 limit aliases tied to the shared input contract", () => {
     KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH,
     KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH,
   );
+  assert.equal(
+    KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH,
+    `required:required-${KEEPFACTS_MAX_REQUIRED_ITEMS - 1}-`.length +
+      KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH * 18,
+  );
 });
 
 test("loads and reconciles the historical v0.3.0 schema-v1 fixture", () => {
@@ -196,6 +201,73 @@ test("supports a draft-only session and preserves stale checked input", () => {
   const parsed = parseKeepFactsSession(serializeKeepFactsSession(stale));
   assert.notDeepEqual(parsed.editor, parsed.result?.input);
   assert.equal(parsed.editor.source.endsWith("Draft 42."), true);
+});
+
+test("round-trips an NFKC-expanded required review key", () => {
+  const required = "ﬃ".repeat(400);
+  const input = { source: required, revision: "", required };
+  const comparison = compareFacts(input.source, input.revision, input.required);
+  const item = getReviewItems(comparison).find(
+    (candidate) => candidate.scope === "required",
+  );
+  assert.ok(item);
+  assert.equal(required.length, 400);
+  assert.equal(item.key.length, 1_220);
+  assert.ok(item.key.length > 1_024);
+  assert.ok(item.key.length <= KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH);
+
+  const session = validSession();
+  session.editor = input;
+  session.result = {
+    input,
+    reviewRecords: [{ key: item.key, decision: "confirmed" }],
+  };
+
+  const parsed = parseKeepFactsSession(serializeKeepFactsSession(session));
+  assert.equal(parsed.result?.reviewRecords[0].key, item.key);
+  assert.ok(parsed.result);
+  const reconciled = reconcileKeepFactsReviewRecords(
+    parsed.result.reviewRecords,
+    comparison,
+  );
+  assert.equal(reconciled.restoredCount, 1);
+  assert.deepEqual(reconciled.reviewRecords[item.key], {
+    decision: "confirmed",
+  });
+});
+
+test("rejects review keys beyond the normalization-derived boundary", () => {
+  const ordinarySession = validSession();
+  ordinarySession.result!.reviewRecords[0].key = "k".repeat(1_025);
+  expectSessionError(
+    () => validateKeepFactsSession(ordinarySession),
+    "limit-exceeded",
+    "$.result.reviewRecords[0].key",
+  );
+
+  const session = validSession();
+  session.result!.input.required = "\uFDFA".repeat(
+    KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH,
+  );
+  session.result!.reviewRecords[0].key = "k".repeat(
+    KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH + 1,
+  );
+  expectSessionError(
+    () => validateKeepFactsSession(session),
+    "limit-exceeded",
+    "$.result.reviewRecords[0].key",
+  );
+
+  const unrelated = validSession();
+  unrelated.result!.input.required = "\uFDFA".repeat(
+    KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH,
+  );
+  unrelated.result!.reviewRecords[0].key = "k".repeat(2_000);
+  expectSessionError(
+    () => validateKeepFactsSession(unrelated),
+    "limit-exceeded",
+    "$.result.reviewRecords[0].key",
+  );
 });
 
 test("rejects missing and additional fields at every schema level", () => {
@@ -367,12 +439,27 @@ test("enforces editor, required-item, review-record, and byte limits", () => {
       (_, index) => `item-${index}`,
     ),
   ].join("\n");
+  atEveryStructuredLimit.result!.input.required = "ﬃ".repeat(
+    KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH,
+  );
+  const maxRequiredReview = getReviewItems(
+    compareFacts(
+      atEveryStructuredLimit.result!.input.source,
+      atEveryStructuredLimit.result!.input.revision,
+      atEveryStructuredLimit.result!.input.required,
+    ),
+  ).find((item) => item.scope === "required");
+  assert.ok(maxRequiredReview);
+  assert.ok(maxRequiredReview.key.length > 1_024);
+  assert.ok(
+    maxRequiredReview.key.length <= KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH,
+  );
   atEveryStructuredLimit.result!.reviewRecords = Array.from(
     { length: KEEPFACTS_SESSION_MAX_REVIEW_RECORDS },
     (_, index) => ({
       key:
         index === 0
-          ? "k".repeat(KEEPFACTS_SESSION_MAX_REVIEW_KEY_LENGTH)
+          ? maxRequiredReview.key
           : `source:number-${index}-${index + 1}`,
       decision: "ignored" as const,
       ...(index === 0

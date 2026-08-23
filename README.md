@@ -58,61 +58,42 @@ It is intentionally narrow:
 - its retention percentage covers only facts extracted from the source, not
   every factual statement the document may contain.
 
-## Project status and v0.3.3 maintenance scope
+## Project status and v0.4.0 maintenance scope
 
-KeepFacts is feature-complete for its current documented browser workflow.
-v0.3.2 moved that workflow into stable maintenance, and v0.3.3 refines its
-accessibility and review flow while the project remains a
-pre-1.0 (`0.x`) release: this is not a KeepFacts v1 declaration or a promise of
-permanent API, file-format, or recognition compatibility. Only the latest
-tagged release is supported on a best-effort basis, with no LTS branch or
+v0.4.0 is the recommended tagged baseline for the documented browser workflow.
+It remains a pre-1.0 (`0.x`) release: this is not a KeepFacts v1 declaration or
+a promise of permanent API, file-format, or recognition compatibility. Only
+the latest tag is supported on a best-effort basis, with no LTS branch or
 response-time SLA. See [Privacy and limitations](#privacy-and-limitations) and
 the [security policy](SECURITY.md).
 
-Future patch releases are limited to security, bug, compatibility,
-accessibility, documentation, and release-infrastructure fixes. New product
-capabilities or recognizers require an explicitly scoped release and matching
-evidence. The ready-to-run example remains the first call to action and previews
-the same three differences shown in its result. The evergreen 1200 × 630 social
-card, canonical URL, Open Graph and X/Twitter metadata, and favicon make shared
-links identifiable. Source, privacy, and feedback links stay visible, and
-mobile interactive controls are at least 44 CSS pixels high.
+This release makes the review workflow safer and easier to finish. Human-review
+items now show bilateral evidence directly in the queue; complete machine
+details remain available in one collapsed disclosure. Decision labels explain
+the difference between a confirmed issue, an intentional acceptable change,
+and an item excluded from this delivery. Draft and completed reports have
+distinct controls and timestamped filenames.
 
-The compact v0.3.3 layout brings the comparison workspace into view sooner,
-adds a keyboard-visible skip link, and reveals optional review annotations only
-after a human decision. It removes duplicate labels and unavailable actions,
-keeps the mobile retention label readable, and brings the branded home link
-into the 44 CSS-pixel mobile target contract without changing the documented
-checking workflow. User-entered text now receives the same destructive-action
-confirmation as human-review records, and the longer English launch copy no
-longer pushes the comparison workspace out of the 390 px first view.
-The example-first launch now uses an asymmetric editorial layout with one
-high-contrast fact ledger. The working area deliberately becomes quieter: two
-symmetric proof sheets, compact numbered headers, and grouped result records
-keep the source and rewrite visually equal. On mobile, the same three example
-changes remain readable as rows instead of becoming a compressed dashboard.
+KeepFacts still keeps working state only in page memory. v0.4.0 makes that
+constraint visible: user-created work is marked as unexported, receives a
+best-effort native close/refresh warning request, and changes to a checkpoint
+state after a session is imported or exported. A session remains strict,
+versioned, unencrypted plaintext. Schema v1 identifies its data format; it does
+not make the product v1. See [Session format v1](docs/session-format-v1.md).
 
-The release retains the v0.3.0 human-review and handoff workflow. Automatic
-warnings, must-preserve anomalies, and facts introduced only in the rewrite now
-share one queue. Each item can carry a decision, optional note, and optional
-expected fix; only confirmed issues enter the standalone fix list. A conservative recheck
-migration preserves a decision only when the finding and its evidence still
-match safely, and never silently assigns an ambiguous old record to a new item.
+The release also fixes specific correctness boundaries: mixed Chinese/Latin
+must-preserve terms, compact hyphenated ranges, review decisions whose evidence
+moves to another subject, NFKC-expanded generated session keys, and invalid
+dates or times introduced only by the rewrite. These fixes do not add a new
+fact type or expand either public corpus. They are regression evidence for the
+named cases, not a general claim of broader recognition or improved accuracy.
+A 100% extracted-fact retention result still does not mean that every claim is
+true, every fact was recognized, or the full meaning was preserved.
 
-You can explicitly export or import a local `.keepfacts.json` session to move a
-draft, its last checked input, and human records between browser sessions. The
-file is strict, versioned, unencrypted plaintext. Its schema v1 identifies the
-session data format; it does not mean the KeepFacts product is v1. See
-[Session format v1](docs/session-format-v1.md).
-
-The fact-recognition rules and public evaluation corpus are unchanged from
-v0.3.1. v0.3.2 aligned editor and session limits, made long must-preserve checks
-faster, and hardened failure recovery; v0.3.3 changes only interface and
-accessibility behavior. Neither patch demonstrates broader recognition or
-improved accuracy. Use KeepFacts to check
-whether recognized exact facts survive an AI transformation. A 100%
-extracted-fact retention result does not mean that every claim is true, every
-fact was recognized, or the full meaning was preserved.
+Future maintenance focuses on security, correctness, compatibility,
+accessibility, documentation, and release reliability. A new capability or
+recognizer requires a separately scoped release and evidence appropriate to
+its claim.
 
 ## Current checks
 
@@ -129,14 +110,16 @@ fact was recognized, or the full meaning was preserved.
   separately from extracted-fact retention
 - One human-review queue across automatic warnings, must-preserve anomalies,
   and newly added facts, with decisions, optional notes, optional expected
-  fixes, and a next-pending action
+  fixes, inline bilateral evidence, and a next-pending action
 - A confirmed-only Markdown fix list plus full traceable reports with bilateral
-  context, human records, app version, and build commit
+  context, human records, app version, build commit, review-state label, and a
+  UTC export timestamp
 - Conservative record migration after rechecking: unchanged, uniquely matched
   evidence can retain its decision; changed evidence returns to pending, and
   ambiguous or unmatched records are not silently reassigned
 - Explicit local import/export of versioned, unencrypted `.keepfacts.json`
-  sessions; no automatic persistence or upload
+  sessions, with an unexported-work warning and checkpoint state; no automatic
+  persistence or upload
 - Fifty-item pagination for large automatic and must-preserve result sets
 - Native radio-group decisions and focus-managed pagination, covered by
   responsive keyboard and browser accessibility checks

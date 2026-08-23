@@ -2,6 +2,68 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.4.0] - 2026-08-24
+
+### Changed
+
+- Make the human-review queue the primary result surface. Every review item now
+  shows its source and rewrite evidence inline, while the complete automatic
+  fact and must-preserve record remains available in one collapsed, keyboard-
+  accessible disclosure.
+- Clarify the human decisions as `confirmed issue`, `acceptable change`, and
+  `out of this review`, with an explicit warning that excluding an item from
+  this review is not a claim that it is correct.
+- Distinguish draft and completed Markdown reports in both button labels and
+  filenames. Filenames now include the review state and a UTC timestamp, so
+  separate exports no longer overwrite one another as easily.
+- Show whether the current in-memory work is unexported or matches the most
+  recent imported/exported session. While user-created work has unexported
+  changes, KeepFacts asks the browser to show its native close/refresh warning;
+  it still does not autosave or upload that work.
+- Refine the existing paper, ink, green, and yellow interface with clearer
+  action hierarchy, higher-contrast placeholders and focus states, SVG status
+  marks, a visible no-facts result, two-column mobile filters, and a compact
+  non-sticky review toolbar in short landscape viewports.
+- Add a bilingual, expandable recognition-scope disclosure beside the editor so
+  supported fact types and known omissions are visible before a user interprets
+  the result.
+
+### Fixed
+
+- Match mixed-script must-preserve terms such as `VIP`, `Project Atlas`, `v2`,
+  and `AI` when they touch Chinese text, while retaining English word-boundary
+  protection.
+- Treat hyphens in compact money and percentage ranges such as `$100-$200` and
+  `10%-20%` as range separators without breaking real negative values.
+- Reset a migrated human decision when the same-looking value moves to a
+  different nearby subject. Existing notes and expected fixes remain available
+  for review instead of silently assigning the old decision to new evidence.
+- Accept schema-v1 review keys generated from valid must-preserve items whose
+  Unicode NFKC normalization expands their length, while preserving the legacy
+  limit for ordinary keys and all existing file-size and input limits.
+- Label an invalid date or time introduced only by the rewrite as invalid in
+  both the interface and Markdown report instead of describing it as a generic
+  addition.
+
+### Release and reporting
+
+- Deploy GitHub Pages from version tags (or an explicit manual tag) instead of
+  every push to `main`, and verify that the current version is present in the
+  package lock, changelog, both README status headings, validation heading, tag,
+  and injected build commit.
+- Require the reported KeepFacts version and an explicit public-data safety
+  confirmation in the bug-report template before accepting reproduction text.
+
+### Scope
+
+- v0.4.0 fixes the named matching, migration, session, and invalid-value cases
+  above, but does not add a new fact type or expand the public validation or
+  manually annotated evaluation corpora. Passing those unchanged corpora is a
+  regression guarantee for their named cases, not evidence of broader fact
+  coverage or full-document accuracy.
+- Session schema remains version 1. This product release does not make
+  KeepFacts a v1 product or promise permanent compatibility.
+
 ## [0.3.3] - 2026-08-23
 
 ### Accessibility

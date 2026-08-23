@@ -67,6 +67,7 @@ const labels: Record<
     notInSource: string;
     notInSourceAdded: string;
     newFact: string;
+    newInvalidFact: string;
     sourceValue: string;
     rewriteValue: string;
     sourceContext: string;
@@ -98,8 +99,8 @@ const labels: Record<
     manualAcceptable: "审阅完成 · 无确认问题",
     manualPending: "待处理",
     manualConfirmed: "确认需处理",
-    manualAccepted: "改写合理",
-    manualIgnored: "已忽略",
+    manualAccepted: "改写可接受",
+    manualIgnored: "不纳入本次审阅",
     manualDecision: "人工结论",
     manualNote:
       "人工结论独立于自动统计，不会自动持久化；主动导出的报告或会话文件可能包含人工结论、备注和期望修复。",
@@ -128,6 +129,7 @@ const labels: Record<
     notInSource: "原文中未找到，请检查这项输入",
     notInSourceAdded: "原文中未找到；仅在改写稿出现，不算作已保留",
     newFact: "只在改写稿中出现",
+    newInvalidFact: "只在改写稿中出现，但该日期或时间值无效",
     sourceValue: "原文值",
     rewriteValue: "改写值",
     sourceContext: "原文语境",
@@ -172,8 +174,8 @@ const labels: Record<
     manualAcceptable: "Review complete · no confirmed issues",
     manualPending: "Pending",
     manualConfirmed: "Confirmed issue",
-    manualAccepted: "Acceptable rewrite",
-    manualIgnored: "Ignored",
+    manualAccepted: "Acceptable change",
+    manualIgnored: "Out of this review",
     manualDecision: "Human decision",
     manualNote:
       "Human review is separate from automatic metrics and is not persisted automatically; reports or session files you explicitly export may contain decisions, notes, and expected fixes.",
@@ -203,6 +205,8 @@ const labels: Record<
     notInSourceAdded:
       "Not found in the source; appearing only in the rewrite is not preservation",
     newFact: "Appears only in the rewrite",
+    newInvalidFact:
+      "Appears only in the rewrite, but this date or time value is invalid",
     sourceValue: "Source value",
     rewriteValue: "Rewrite value",
     sourceContext: "Source context",
@@ -277,7 +281,7 @@ function findingNote(
 ) {
   const t = labels[locale];
   const compared = fact as ComparedFact;
-  if (added) return t.newFact;
+  if (added) return fact.valid === false ? t.newInvalidFact : t.newFact;
   if (compared.status !== "review") return t.preserved;
   if (compared.reviewReason === "invalid") return t.invalid;
   if (compared.reviewReason === "not-in-source") {

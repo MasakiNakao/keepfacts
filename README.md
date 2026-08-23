@@ -58,10 +58,11 @@ It is intentionally narrow:
 - its retention percentage covers only facts extracted from the source, not
   every factual statement the document may contain.
 
-## Project status and v0.3.2 maintenance scope
+## Project status and v0.3.3 maintenance scope
 
 KeepFacts is feature-complete for its current documented browser workflow.
-v0.3.2 moves that workflow into stable maintenance while the project remains a
+v0.3.2 moved that workflow into stable maintenance, and v0.3.3 refines its
+accessibility and review flow while the project remains a
 pre-1.0 (`0.x`) release: this is not a KeepFacts v1 declaration or a promise of
 permanent API, file-format, or recognition compatibility. Only the latest
 tagged release is supported on a best-effort basis, with no LTS branch or
@@ -77,6 +78,20 @@ card, canonical URL, Open Graph and X/Twitter metadata, and favicon make shared
 links identifiable. Source, privacy, and feedback links stay visible, and
 mobile interactive controls are at least 44 CSS pixels high.
 
+The compact v0.3.3 layout brings the comparison workspace into view sooner,
+adds a keyboard-visible skip link, and reveals optional review annotations only
+after a human decision. It removes duplicate labels and unavailable actions,
+keeps the mobile retention label readable, and brings the branded home link
+into the 44 CSS-pixel mobile target contract without changing the documented
+checking workflow. User-entered text now receives the same destructive-action
+confirmation as human-review records, and the longer English launch copy no
+longer pushes the comparison workspace out of the 390 px first view.
+The example-first launch now uses an asymmetric editorial layout with one
+high-contrast fact ledger. The working area deliberately becomes quieter: two
+symmetric proof sheets, compact numbered headers, and grouped result records
+keep the source and rewrite visually equal. On mobile, the same three example
+changes remain readable as rows instead of becoming a compressed dashboard.
+
 The release retains the v0.3.0 human-review and handoff workflow. Automatic
 warnings, must-preserve anomalies, and facts introduced only in the rewrite now
 share one queue. Each item can carry a decision, optional note, and optional
@@ -91,9 +106,10 @@ session data format; it does not mean the KeepFacts product is v1. See
 [Session format v1](docs/session-format-v1.md).
 
 The fact-recognition rules and public evaluation corpus are unchanged from
-v0.3.1. This maintenance release aligns editor and session limits, makes long
-must-preserve checks faster, and hardens failure recovery; it does not
-demonstrate broader recognition or improved accuracy. Use KeepFacts to check
+v0.3.1. v0.3.2 aligned editor and session limits, made long must-preserve checks
+faster, and hardened failure recovery; v0.3.3 changes only interface and
+accessibility behavior. Neither patch demonstrates broader recognition or
+improved accuracy. Use KeepFacts to check
 whether recognized exact facts survive an AI transformation. A 100%
 extracted-fact retention result does not mean that every claim is true, every
 fact was recognized, or the full meaning was preserved.

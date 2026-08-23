@@ -87,6 +87,7 @@ function detectInitialLocale(): Locale {
 
 const copy = {
   zh: {
+    skipToChecker: "跳到核对区",
     privacy: "本地处理 · 文本不会上传",
     mobilePrivacy: "本地处理 · 文本不会上传",
     eyebrow: "AI 改写硬事实保留检查",
@@ -190,8 +191,15 @@ const copy = {
     reviewNoFindings: "未发现需人工审阅项",
     reviewOutdated: "结果已过期",
     reviewOutcomeLabel: "当前审阅状态",
-    resetReviewConfirm: (count: number) =>
-      `已有 ${count} 条人工审阅记录。继续操作将清除这些记录，是否继续？`,
+    resetWorkConfirm: (count: number, includesText: boolean) => {
+      if (includesText && count) {
+        return `当前文本和已有 ${count} 条人工审阅记录将被清除，是否继续？`;
+      }
+      if (includesText) {
+        return "当前输入的原文、改写稿或必保内容将被清除，是否继续？";
+      }
+      return `已有 ${count} 条人工审阅记录。继续操作将清除这些记录，是否继续？`;
+    },
     manualDecision: "人工结论",
     manualDecisionGroup: "选择人工结论",
     reviewQueue: "人工审阅队列",
@@ -208,6 +216,7 @@ const copy = {
     optional: "可选",
     notePlaceholder: "补充判断依据或交接说明（最多 500 字）",
     expectedFixPlaceholder: "说明希望如何修改新稿（最多 500 字）",
+    reviewAnnotationHint: "选择人工结论后，可补充备注和期望修复。",
     machineDetailsNote: "以下为机器明细；人工结论请在上方统一队列处理。",
     remainingPending: (count: number) => `还剩 ${count} 项待处理。`,
     movedToPending: (index: number, scope: string, raw: string) =>
@@ -263,6 +272,7 @@ const copy = {
     changeLanguage: "English",
   },
   en: {
+    skipToChecker: "Skip to comparison",
     privacy: "Local only · Text is not uploaded",
     mobilePrivacy: "Local only · Text is not uploaded",
     eyebrow: "AI rewrite exact-fact preservation",
@@ -369,8 +379,16 @@ const copy = {
     reviewNoFindings: "No findings require human review",
     reviewOutdated: "Results outdated",
     reviewOutcomeLabel: "Current review status",
-    resetReviewConfirm: (count: number) =>
-      `${count} human review record${count === 1 ? "" : "s"} will be cleared if you continue. Continue?`,
+    resetWorkConfirm: (count: number, includesText: boolean) => {
+      const records = `${count} human review record${count === 1 ? "" : "s"}`;
+      if (includesText && count) {
+        return `Your current text and ${records} will be cleared. Continue?`;
+      }
+      if (includesText) {
+        return "Your current source, rewrite, or must-preserve content will be cleared. Continue?";
+      }
+      return `${records} will be cleared if you continue. Continue?`;
+    },
     manualDecision: "Human decision",
     manualDecisionGroup: "Choose a human decision",
     reviewQueue: "Human review queue",
@@ -387,6 +405,7 @@ const copy = {
     optional: "Optional",
     notePlaceholder: "Add reasoning or handoff context (500 characters max)",
     expectedFixPlaceholder: "Describe how the rewrite should be corrected (500 characters max)",
+    reviewAnnotationHint: "Choose a human decision to add a note or expected fix.",
     machineDetailsNote: "Machine details only; record human decisions in the unified queue above.",
     remainingPending: (count: number) =>
       `${count} pending item${count === 1 ? "" : "s"} remain.`,
@@ -613,32 +632,38 @@ function ResultCard({
           </fieldset>
         ) : null}
         {reviewable && reviewScope && onReviewRecordChange ? (
-          <div className="review-annotations">
-            <label className="review-field">
-              <span>{`${t.note} · ${t.optional}`}</span>
-              <textarea
-                value={reviewRecord?.note ?? ""}
-                maxLength={500}
-                disabled={reviewDisabled}
-                placeholder={t.notePlaceholder}
-                onChange={(event) =>
-                  onReviewRecordChange({ note: event.target.value })
-                }
-              />
-            </label>
-            <label className="review-field">
-              <span>{`${t.expectedFix} · ${t.optional}`}</span>
-              <textarea
-                value={reviewRecord?.expectedFix ?? ""}
-                maxLength={500}
-                disabled={reviewDisabled}
-                placeholder={t.expectedFixPlaceholder}
-                onChange={(event) =>
-                  onReviewRecordChange({ expectedFix: event.target.value })
-                }
-              />
-            </label>
-          </div>
+          reviewRecord?.decision ||
+          reviewRecord?.note ||
+          reviewRecord?.expectedFix ? (
+            <div className="review-annotations">
+              <label className="review-field">
+                <span>{`${t.note} · ${t.optional}`}</span>
+                <textarea
+                  value={reviewRecord?.note ?? ""}
+                  maxLength={500}
+                  disabled={reviewDisabled}
+                  placeholder={t.notePlaceholder}
+                  onChange={(event) =>
+                    onReviewRecordChange({ note: event.target.value })
+                  }
+                />
+              </label>
+              <label className="review-field">
+                <span>{`${t.expectedFix} · ${t.optional}`}</span>
+                <textarea
+                  value={reviewRecord?.expectedFix ?? ""}
+                  maxLength={500}
+                  disabled={reviewDisabled}
+                  placeholder={t.expectedFixPlaceholder}
+                  onChange={(event) =>
+                    onReviewRecordChange({ expectedFix: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          ) : (
+            <p className="review-annotation-hint">{t.reviewAnnotationHint}</p>
+          )
         ) : null}
         {sourceFact?.context || rewriteFact?.context ? (
           <details className="context-details">
@@ -872,10 +897,16 @@ export default function Home() {
     setter(value);
   };
 
-  const confirmReviewReset = () => {
+  const confirmWorkReset = (protectOwnText = true) => {
     const recordCount = Object.keys(reviewRecords).length;
+    const includesText = Boolean(
+      protectOwnText &&
+        !isExampleMode &&
+        (source || revision || required || hasRun),
+    );
     return (
-      recordCount === 0 || window.confirm(t.resetReviewConfirm(recordCount))
+      (!includesText && recordCount === 0) ||
+      window.confirm(t.resetWorkConfirm(recordCount, includesText))
     );
   };
 
@@ -888,7 +919,7 @@ export default function Home() {
   };
 
   const loadExample = () => {
-    if (!confirmReviewReset()) return;
+    if (!confirmWorkReset()) return;
     cancelPendingComparison();
     cancelPendingImport();
     const example = examples[locale];
@@ -918,7 +949,7 @@ export default function Home() {
   };
 
   const clearAll = () => {
-    if (!confirmReviewReset()) return;
+    if (!confirmWorkReset()) return;
     cancelPendingComparison();
     cancelPendingImport();
     setSource("");
@@ -945,7 +976,7 @@ export default function Home() {
       setFocusSourceAfterReset(true);
       return;
     }
-    if (!confirmReviewReset()) return;
+    if (!confirmWorkReset(false)) return;
     cancelPendingComparison();
     cancelPendingImport();
     setSource("");
@@ -1592,7 +1623,10 @@ export default function Home() {
   ];
 
   return (
-    <main>
+    <main lang={locale === "zh" ? "zh-CN" : "en"}>
+      <a className="skip-link" href="#checker">
+        {t.skipToChecker}
+      </a>
       <header className="site-header">
         <a className="brand" href="#top" aria-label={t.homeLabel}>
           <span className="brand-mark" aria-hidden="true">
@@ -1616,8 +1650,10 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="hero" id="top">
-        <p className="eyebrow">{t.eyebrow}</p>
+      <section
+        className={`hero ${isExampleMode && hasRun ? "hero-with-proof" : "hero-single"}`}
+        id="top"
+      >
         <h1>
           {t.titleA}
           <br />
@@ -1626,9 +1662,27 @@ export default function Home() {
         <p className="hero-copy">{t.intro}</p>
         {isExampleMode && hasRun ? (
           <ul className="hero-proof" aria-label={t.exampleProof}>
-            <li>{t.proofDate}</li>
-            <li>{t.proofUsers}</li>
-            <li>{t.proofLink}</li>
+            {[t.proofDate, t.proofUsers, t.proofLink].map((proof) => {
+              const [before, after] = proof.split("→").map((part) => part.trim());
+
+              return (
+                <li key={proof}>
+                  <span className="proof-change">
+                    {after ? (
+                      <>
+                        <span className="proof-before">{before}</span>
+                        {" "}
+                        <span className="proof-arrow">→</span>
+                        {" "}
+                        <strong>{after}</strong>
+                      </>
+                    ) : (
+                      <strong className="proof-single">{proof}</strong>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
         <div className="hero-actions">
@@ -1680,7 +1734,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="checker" aria-label={t.eyebrow}>
+      <section className="checker" id="checker" aria-label={t.eyebrow}>
         <section
           className="input-mode"
           data-testid="input-mode"
@@ -1769,19 +1823,6 @@ export default function Home() {
 
         <div className="action-bar">
           <div className="secondary-actions">
-            {isExampleMode ? (
-              <>
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={loadExample}
-                  disabled
-                >
-                  {t.loadExample}
-                </button>
-                <span aria-hidden="true">·</span>
-              </>
-            ) : null}
             <button type="button" className="text-button" onClick={clearAll}>
               {t.clear}
             </button>
@@ -1840,13 +1881,12 @@ export default function Home() {
         <section className="results-section" id="results">
           <div className="results-heading-row">
             <div>
-              <p className="eyebrow">03 · {t.resultTitle}</p>
               <h2 ref={resultsHeading} tabIndex={-1}>{t.resultTitle}</h2>
               <p>{t.resultIntro}</p>
             </div>
             <div className="result-tools">
               <div
-                className="score-ring"
+                className="retention-metric"
                 role={retention === null ? "status" : "meter"}
                 aria-valuemin={retention === null ? undefined : 0}
                 aria-valuemax={retention === null ? undefined : 100}
@@ -2066,7 +2106,6 @@ export default function Home() {
             <section className="required-results" aria-label={t.requiredResults}>
               <div className="required-results-heading">
                 <div>
-                  <p className="eyebrow">{t.requiredResults}</p>
                   <h3 ref={requiredResultsHeading} tabIndex={-1}>
                     {t.requiredResults}
                   </h3>

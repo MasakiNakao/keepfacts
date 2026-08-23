@@ -2,6 +2,43 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.3.3] - 2026-08-23
+
+### Accessibility
+
+- Add a keyboard-visible skip link that moves directly from the page start to
+  the comparison workspace in both supported languages.
+- Keep review notes and expected-fix fields out of the pending state, then
+  reveal them after a human decision so the review order is clearer without
+  removing either field.
+
+### Changed
+
+- Recompose the example-first launch area into an asymmetric editorial layout
+  with one high-contrast three-row fact ledger, then quiet the working area
+  into two symmetric proof sheets and grouped result records. Mobile presents
+  the same evidence as three readable rows instead of a compressed dashboard,
+  using the existing paper, ink, green, and yellow visual system.
+- Tighten the launch spacing and editor height so the comparison workspace is
+  visible sooner on desktop and mobile while preserving 44 CSS-pixel mobile
+  targets.
+- Remove duplicate section labels and the disabled example action, clarify the
+  pending-review hint, and make typography, focus treatment, and result details
+  more consistent.
+- Replace the cramped mobile retention ring with a readable inline metric,
+  tighten heading focus treatment, and include the branded home link in the
+  44 CSS-pixel mobile target contract.
+- Protect unsaved user-entered text as well as human-review records before
+  clearing the workspace or replacing it with the example, and keep the
+  English comparison workspace discoverable in the 390 px first view.
+
+### Scope
+
+- Keep the v0.3.2 fact-recognition engine, input/session limits, public
+  validation corpus, and evaluation corpus unchanged. This patch improves the
+  documented interface and accessibility; it does not claim broader fact
+  coverage or improved recognition accuracy.
+
 ## [0.3.2] - 2026-08-15
 
 ### Maintenance

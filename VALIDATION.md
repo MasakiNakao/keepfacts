@@ -24,19 +24,22 @@ The data-driven corpus lives in
 a source, a rewrite, and the expected number of preserved, review, and added
 facts. The test runner fails when any result changes unexpectedly.
 
-## v0.3.2 maintenance release gates
+## v0.3.3 maintenance release gates
 
 - 37 public validation cases; the fact cases are unchanged from v0.3.1
 - 82/82 Node unit, evaluation, performance, review, report, session, and
   social-metadata tests pass
-- 51 Chromium browser, keyboard, and accessibility checks pass across desktop
+- 55 Chromium browser, keyboard, and accessibility checks pass across desktop
   and 390 px mobile projects; one desktop run intentionally skips the
   mobile-only first-exposure control check
 - The dependency audit must report no high- or critical-severity advisory
 - Launch checks cover the example-first hero action, all three visible example
   differences, canonical/Open Graph/X card and favicon metadata, visible
-  source/privacy/feedback links, and a minimum 44 CSS-pixel height for mobile
-  interactive controls
+  source/privacy/feedback links, a single-line mobile retention label, and a
+  minimum 44 CSS-pixel height for mobile interactive controls including the
+  branded home link. Destructive-action checks protect unsaved user text and
+  review records, and the 390 px English first view keeps the comparison
+  workspace discoverable
 - Chinese and English examples
 - Positive matches, changed facts, missing facts, added facts, duplicates, and
   false-positive boundaries
@@ -72,7 +75,10 @@ metadata, public-link, and mobile-target gates. v0.3.2 is a feature-complete,
 pre-1.0 maintenance release that updates dependencies, governance, security
 contact guidance, evergreen social metadata, input/session boundary handling,
 long must-preserve performance, and retry-safe error feedback. Human records remain
-separate from machine counts and retention. This release does not add
+separate from machine counts and retention. v0.3.3 adds a keyboard skip path,
+reduces first-view and pending-review density, and removes duplicate or
+unavailable interface actions without changing recognition behavior. This
+release does not add
 recognizers or expand the public validation or evaluation corpora, so its
 maintenance gates must not be interpreted as evidence of broader fact coverage
 or improved accuracy.

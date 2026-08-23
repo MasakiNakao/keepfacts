@@ -12,6 +12,12 @@ const packageMetadata = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ) as { version: string };
 const expectedVersion = `v${packageMetadata.version}`;
+const reviewAndTextResetMessage =
+  "当前文本和已有 1 条人工审阅记录将被清除，是否继续？";
+const reviewResetMessage =
+  "已有 1 条人工审阅记录。继续操作将清除这些记录，是否继续？";
+const textResetMessage =
+  "当前输入的原文、改写稿或必保内容将被清除，是否继续？";
 
 async function setComparison(
   page: Page,
@@ -49,14 +55,13 @@ async function answerConfirmation(
   page: Page,
   action: Locator,
   accept: boolean,
+  expectedMessage: string,
 ) {
   const dialogPromise = page.waitForEvent("dialog");
   const clickPromise = action.click();
   const dialog = await dialogPromise;
   expect(dialog.type()).toBe("confirm");
-  expect(dialog.message()).toBe(
-    "已有 1 条人工审阅记录。继续操作将清除这些记录，是否继续？",
-  );
+  expect(dialog.message()).toBe(expectedMessage);
   if (accept) await dialog.accept();
   else await dialog.dismiss();
   await clickPromise;
@@ -117,6 +122,7 @@ test("distinguishes the example from the user's own text", async ({ page }) => {
   const mode = page.getByRole("region", { name: "示例模式" });
   await expect(mode).toContainText("当前显示示例内容和示例结果。");
   await expect(page.getByRole("heading", { name: "核对结果" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "载入示例" })).toHaveCount(0);
 
   await page
     .locator(".hero")
@@ -128,6 +134,23 @@ test("distinguishes the example from the user's own text", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: /对照两版/ }),
   ).toBeDisabled();
+});
+
+test("lets keyboard users skip directly to the comparison workspace", async ({
+  page,
+}) => {
+  const skipLink = page.getByRole("link", { name: "跳到核对区" });
+  await skipLink.focus();
+  await expect(skipLink).toBeVisible();
+  await skipLink.press("Enter");
+  await expect(page).toHaveURL(/#checker$/);
+  await expect
+    .poll(() =>
+      page.locator("#checker").evaluate((element) =>
+        Math.round(element.getBoundingClientRect().top),
+      ),
+    )
+    .toBeLessThanOrEqual(24);
 });
 
 test("qualifies retention as extracted-fact coverage", async ({ page }) => {
@@ -260,10 +283,7 @@ test("prioritizes the example and exposes proof, trust, and feedback", async ({
   ).toHaveCount(1);
   await expect(
     page.getByRole("button", { name: "载入示例", exact: true }),
-  ).toHaveCount(1);
-  await expect(
-    page.getByRole("button", { name: "载入示例", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: "English" }).click();
   await expect(
@@ -374,7 +394,7 @@ test("confirms destructive example and clear actions after a decision", async ({
   const loadExample = page
     .getByRole("region", { name: "我的文本" })
     .getByRole("button", { name: "载入示例", exact: true });
-  await answerConfirmation(page, loadExample, false);
+  await answerConfirmation(page, loadExample, false, reviewAndTextResetMessage);
   await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue(
     customSource,
   );
@@ -382,7 +402,7 @@ test("confirms destructive example and clear actions after a decision", async ({
     findings.automatic.getByRole("radio", { name: "确认需处理" }),
   ).toBeChecked();
 
-  await answerConfirmation(page, loadExample, true);
+  await answerConfirmation(page, loadExample, true, reviewAndTextResetMessage);
   await expect(page.getByRole("region", { name: "示例模式" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue(
     /星河工作室/,
@@ -403,16 +423,51 @@ test("confirms destructive example and clear actions after a decision", async ({
     .check();
 
   const clear = page.getByRole("button", { name: "清空", exact: true });
-  await answerConfirmation(page, clear, false);
+  await answerConfirmation(page, clear, false, reviewResetMessage);
   await expect(
     findings.automatic.getByRole("radio", { name: "确认需处理" }),
   ).toBeChecked();
   await expect(page.getByRole("heading", { name: "核对结果" })).toBeVisible();
 
-  await answerConfirmation(page, clear, true);
+  await answerConfirmation(page, clear, true, reviewResetMessage);
   await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue("");
   await expect(page.getByRole("textbox", { name: "改写稿" })).toHaveValue("");
   await expect(page.getByRole("heading", { name: "核对结果" })).toHaveCount(0);
+});
+
+test("protects entered text before loading an example or clearing", async ({
+  page,
+}) => {
+  await page
+    .locator(".hero")
+    .getByRole("button", { name: "核对我的文本", exact: true })
+    .click();
+  const source = page.getByRole("textbox", { name: "原文" });
+  const revision = page.getByRole("textbox", { name: "改写稿" });
+  await source.fill("合同金额为 ¥12,000。交付日期为 2026年10月1日。");
+  await revision.fill("合同金额为 ¥12,000，计划于 2026年10月1日交付。");
+
+  const loadExample = page
+    .getByRole("region", { name: "我的文本" })
+    .getByRole("button", { name: "载入示例", exact: true });
+  await answerConfirmation(page, loadExample, false, textResetMessage);
+  await expect(source).toHaveValue(/合同金额/);
+  await expect(revision).toHaveValue(/计划于/);
+
+  await answerConfirmation(page, loadExample, true, textResetMessage);
+  await expect(page.getByRole("region", { name: "示例模式" })).toBeVisible();
+  await page.getByRole("button", { name: "使用我的文本", exact: true }).click();
+  await source.fill("原文仍在编辑中，预算为 ¥9,000。");
+  await revision.fill("改写稿仍在编辑中，预算为 ¥9,000。");
+
+  const clear = page.getByRole("button", { name: "清空", exact: true });
+  await answerConfirmation(page, clear, false, textResetMessage);
+  await expect(source).toHaveValue(/原文仍在编辑中/);
+  await expect(revision).toHaveValue(/改写稿仍在编辑中/);
+
+  await answerConfirmation(page, clear, true, textResetMessage);
+  await expect(source).toHaveValue("");
+  await expect(revision).toHaveValue("");
 });
 
 test("round-trips private session text and review records after confirmation", async ({
@@ -628,7 +683,7 @@ test("keeps first-exposure controls accessible at 390px", async ({
   const viewportWidth = page.viewportSize()!.width;
   expect(viewportWidth).toBe(390);
   const controls = page.locator(
-    "button, .trust-links a, .required-panel summary, .context-details summary, .review-decision-option",
+    "button, .brand, .trust-links a, .required-panel summary, .context-details summary, .review-decision-option",
   );
   for (let index = 0; index < (await controls.count()); index += 1) {
     const box = await controls.nth(index).boundingBox();
@@ -649,6 +704,23 @@ test("keeps first-exposure controls accessible at 390px", async ({
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth);
   }
+
+  const retentionMetric = page.locator(".retention-metric");
+  const metricBox = await retentionMetric.boundingBox();
+  expect(metricBox).not.toBeNull();
+  expect(metricBox!.width).toBeGreaterThan(metricBox!.height);
+  await expect
+    .poll(() =>
+      retentionMetric.locator("small").evaluate(
+        (label) => label.scrollWidth <= label.clientWidth,
+      ),
+    )
+    .toBe(true);
+
+  await page.getByRole("button", { name: "English", exact: true }).click();
+  const englishCheckerBox = await page.locator("#checker").boundingBox();
+  expect(englishCheckerBox).not.toBeNull();
+  expect(englishCheckerBox!.y).toBeLessThanOrEqual(800);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -720,17 +792,23 @@ test("completes human review and exports decisions without changing auto counts"
   const automaticFinding = page.locator(
     '.review-queue > li[data-review-scope="source"]',
   );
+  await expect(automaticFinding).toContainText(
+    "选择人工结论后，可补充备注和期望修复。",
+  );
+  await expect(
+    automaticFinding.getByRole("textbox", { name: "审阅备注 · 可选" }),
+  ).toHaveCount(0);
+  await automaticFinding.getByRole("radio", { name: "待处理" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    automaticFinding.getByRole("radio", { name: "确认需处理" }),
+  ).toBeChecked();
   await automaticFinding
     .getByRole("textbox", { name: "审阅备注 · 可选" })
     .fill("原文数字来自已批准版本");
   await automaticFinding
     .getByRole("textbox", { name: "期望修复 · 可选" })
     .fill("恢复为 100 users");
-  await automaticFinding.getByRole("radio", { name: "待处理" }).focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(
-    automaticFinding.getByRole("radio", { name: "确认需处理" }),
-  ).toBeChecked();
   const requiredFinding = page.locator(
     '.review-queue > li[data-review-scope="required"]',
   );

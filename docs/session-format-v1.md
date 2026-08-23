@@ -132,7 +132,8 @@ pairing stage. A normal comparison uses the same limit, so a checked result
 that KeepFacts exports remains eligible for import under schema v1. Draft-only
 sessions (`result: null`) are not compared during import.
 
-Must-preserve items are split on LF or CRLF, trimmed, and empty lines are not
+Must-preserve items are split on LF, CRLF, CR-only, or the Unicode line and
+paragraph separators (`U+2028` and `U+2029`), then trimmed; empty lines are not
 counted toward the 1,000-item limit. Notes and expected fixes are trimmed; LF
 and TAB are allowed, while other C0 and C1 control characters are rejected.
 Generated must-preserve review keys include an NFKC-normalized item. Because a

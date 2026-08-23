@@ -74,3 +74,39 @@ test("compares 400 must-preserve entries in 100k texts within budget", () => {
     `400-entry must-preserve comparison took ${elapsed.toFixed(1)} ms; expected less than 5000 ms`,
   );
 });
+
+test("handles a 100k-digit exact number within bounded time", () => {
+  const value = "9".repeat(100_000);
+  const started = performance.now();
+  const comparison = compareFacts(`Reference ${value}.`, `Reference ${value}.`);
+  const elapsed = performance.now() - started;
+
+  assert.equal(comparison.preservedCount, 1);
+  assert.equal(comparison.sourceFacts[0]?.normalized, value);
+  assert.ok(
+    elapsed < 5_000,
+    `100k-digit comparison took ${elapsed.toFixed(1)} ms; expected less than 5000 ms`,
+  );
+});
+
+test("stops over-limit fact extraction before dense pairing", () => {
+  const inputs = [
+    Array.from({ length: 1_001 }, (_, index) =>
+      `Value${index} ${index + 10_000}.`
+    ).join(" "),
+    "1%".repeat(50_000),
+  ];
+
+  for (const source of inputs) {
+    const started = performance.now();
+    assert.throws(
+      () => compareFacts(source, source, "", { maxFactsPerSide: 1_000 }),
+      /comparison-limit-exceeded/u,
+    );
+    const elapsed = performance.now() - started;
+    assert.ok(
+      elapsed < 1_000,
+      `limited extraction took ${elapsed.toFixed(1)} ms; expected less than 1000 ms`,
+    );
+  }
+});

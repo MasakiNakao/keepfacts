@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type FormEvent,
+} from "react";
 import {
   compareFacts,
   countRequiredNotInSource,
@@ -23,7 +31,6 @@ import {
   getReviewOutcome,
   getReviewOrder,
   migrateReviewRecords,
-  orderReviewQueue,
   reconcileReviewRecords,
   reviewDecisionKey,
   summarizeReviews,
@@ -34,6 +41,7 @@ import {
   type ReviewScope,
 } from "./lib/review";
 import {
+  KeepFactsSessionError,
   KEEPFACTS_SESSION_MAX_BYTES,
   KEEPFACTS_SESSION_SCHEMA_VERSION,
   parseKeepFactsSession,
@@ -50,7 +58,9 @@ import type {
 
 type Locale = "zh" | "en";
 type Filter = "all" | "actionable" | "review" | "preserved" | "added";
+type ReviewFilter = "all" | "pending" | ReviewDecision;
 const RESULT_PAGE_SIZE = 50;
+const REVIEW_PAGE_SIZE = 20;
 const WORKER_TIMEOUT_MS = 30_000;
 const SOURCE_URL = "https://github.com/MasakiNakao/keepfacts";
 const PRIVACY_URL = `${SOURCE_URL}/blob/main/SECURITY.md`;
@@ -124,7 +134,10 @@ const copy = {
       "当前擅长：常见中英文日期、时间、金额、百分比、数量 / 单位、版本、邮箱、链接与数值范围。",
     coverageLimited:
       "暂不保证：电话号码、中文大写数字、本地化小数写法、科学计数法及全文语义。重要内容请加入“必须保留”，黄色结果仍需人工确认。",
-    chars: "字符",
+    characterLimit: (current: number, maximum: number) =>
+      `${current.toLocaleString("en-US")} / ${maximum.toLocaleString("en-US")} 字符`,
+    inputWouldExceedLimit: (field: string, maximum: number) =>
+      `此次输入会使“${field}”超过 ${maximum.toLocaleString("en-US")} 个字符，已取消输入；当前内容未更改。`,
     placeholderSource: "在这里粘贴原文……",
     placeholderRevision: "在这里粘贴改写稿……",
     loadExample: "载入示例",
@@ -201,6 +214,7 @@ const copy = {
     reviewAcceptable: "审阅完成 · 无确认问题",
     reviewNoFindings: "未发现需人工审阅项",
     reviewOutdated: "结果已过期",
+    recheckNow: "重新核对当前文本",
     reviewOutcomeLabel: "当前审阅状态",
     resetWorkConfirm: (count: number, includesText: boolean) => {
       if (includesText && count) {
@@ -215,6 +229,15 @@ const copy = {
     manualDecisionGroup: "选择人工结论",
     reviewQueue: "人工审阅队列",
     reviewToolbar: "审阅与导出操作",
+    reviewBrowseLabel: "筛选和查找人工审阅项",
+    reviewFilterLabel: "按人工结论筛选",
+    reviewSearch: "查找审阅项",
+    reviewSearchPlaceholder: "搜索事实、语境、备注或期望修复",
+    reviewVisibleItems: (visible: number, total: number) =>
+      `显示 ${visible}/${total} 项`,
+    reviewNoMatchesTitle: "没有符合条件的审阅项",
+    reviewNoMatchesBody: "请清除搜索词或选择其他人工结论筛选。",
+    resetReviewBrowse: "显示全部审阅项",
     scopeSource: "自动事实",
     scopeRequired: "必保项",
     scopeAdded: "改写新增",
@@ -260,6 +283,16 @@ const copy = {
       `会话已导入：恢复 ${restored} 条人工记录${dropped ? `，${dropped} 条未匹配` : ""}。`,
     sessionImporting: "正在本地校验会话…",
     sessionImportFailed: "无法导入该会话文件；当前内容未更改。",
+    sessionFileTypeInvalid:
+      "请选择扩展名为 .keepfacts.json 的会话文件；当前内容未更改。",
+    sessionFileTooLarge:
+      "会话文件超过 5 MB 上限，无法导入；当前内容未更改。",
+    sessionSchemaUnsupported:
+      "该会话使用了当前版本不支持的格式；请用原版本打开后重新导出。当前内容未更改。",
+    sessionLimitsExceeded:
+      "会话内容超过当前版本的安全处理上限，无法导入；当前内容未更改。",
+    sessionContentInvalid:
+      "会话文件内容损坏或结构不符合格式，无法导入；当前内容未更改。",
     previousPage: "上一页",
     nextPage: "下一页",
     pageStatus: (page: number, pages: number, total: number) =>
@@ -330,7 +363,10 @@ const copy = {
       "Strongest today: common Chinese and English dates, times, money, percentages, quantities / units, versions, emails, URLs, and numeric ranges.",
     coverageLimited:
       "Not guaranteed: phone numbers, Chinese written numerals, locale-specific decimals, scientific notation, or full-document meaning. Add critical wording to Must-preserve; yellow findings still need human review.",
-    chars: "characters",
+    characterLimit: (current: number, maximum: number) =>
+      `${current.toLocaleString("en-US")} / ${maximum.toLocaleString("en-US")} characters`,
+    inputWouldExceedLimit: (field: string, maximum: number) =>
+      `That input would make ${field} exceed ${maximum.toLocaleString("en-US")} characters, so it was cancelled. Current content is unchanged.`,
     placeholderSource: "Paste the source text here…",
     placeholderRevision: "Paste the rewritten text here…",
     loadExample: "Load example",
@@ -409,6 +445,7 @@ const copy = {
     reviewAcceptable: "Review complete · no confirmed issues",
     reviewNoFindings: "No findings require human review",
     reviewOutdated: "Results outdated",
+    recheckNow: "Recheck current text",
     reviewOutcomeLabel: "Current review status",
     resetWorkConfirm: (count: number, includesText: boolean) => {
       const records = `${count} human review record${count === 1 ? "" : "s"}`;
@@ -424,6 +461,15 @@ const copy = {
     manualDecisionGroup: "Choose a human decision",
     reviewQueue: "Human review queue",
     reviewToolbar: "Review and export actions",
+    reviewBrowseLabel: "Filter and search human review items",
+    reviewFilterLabel: "Filter by human decision",
+    reviewSearch: "Find review items",
+    reviewSearchPlaceholder: "Search facts, context, notes, or expected fixes",
+    reviewVisibleItems: (visible: number, total: number) =>
+      `Showing ${visible} of ${total}`,
+    reviewNoMatchesTitle: "No review items match",
+    reviewNoMatchesBody: "Clear the search or choose another decision filter.",
+    resetReviewBrowse: "Show all review items",
     scopeSource: "Automatic fact",
     scopeRequired: "Must-preserve",
     scopeAdded: "New in rewrite",
@@ -471,6 +517,16 @@ const copy = {
       `Session imported: ${restored} human record${restored === 1 ? "" : "s"} restored${dropped ? `; ${dropped} did not match` : ""}.`,
     sessionImporting: "Validating the session locally…",
     sessionImportFailed: "This session file could not be imported. Current work was not changed.",
+    sessionFileTypeInvalid:
+      "Choose a session file ending in .keepfacts.json. Current work was not changed.",
+    sessionFileTooLarge:
+      "The session file exceeds the 5 MB limit and cannot be imported. Current work was not changed.",
+    sessionSchemaUnsupported:
+      "This session uses a format the current version does not support. Open it with the original version and export it again. Current work was not changed.",
+    sessionLimitsExceeded:
+      "The session exceeds this version's safe processing limits and cannot be imported. Current work was not changed.",
+    sessionContentInvalid:
+      "The session file is damaged or does not match the required structure. Current work was not changed.",
     previousPage: "Previous",
     nextPage: "Next",
     pageStatus: (page: number, pages: number, total: number) =>
@@ -568,6 +624,34 @@ function StatusIcon({ status }: { status: "preserved" | "review" | "added" }) {
   );
 }
 
+function HighlightedContext({
+  context,
+  evidenceStart,
+  evidenceEnd,
+}: {
+  context: string;
+  evidenceStart: number;
+  evidenceEnd: number;
+}) {
+  if (
+    evidenceStart < 0 ||
+    evidenceEnd <= evidenceStart ||
+    evidenceEnd > context.length
+  ) {
+    return context;
+  }
+
+  return (
+    <>
+      {context.slice(0, evidenceStart)}
+      <mark className="evidence-highlight">
+        {context.slice(evidenceStart, evidenceEnd)}
+      </mark>
+      {context.slice(evidenceEnd)}
+    </>
+  );
+}
+
 function ResultCard({
   fact,
   locale,
@@ -635,6 +719,7 @@ function ResultCard({
   return (
     <article
       className={`result-card result-${status}${invalidAdded ? " result-invalid-added" : ""}`}
+      data-review-decision={reviewRecord?.decision ?? "pending"}
     >
       <div className="result-marker" aria-hidden="true">
         <StatusIcon status={invalidAdded ? "review" : status} />
@@ -691,11 +776,10 @@ function ResultCard({
               {decisionOptions.map((option) => (
                 <label
                   key={option.key}
-                  className={
-                    reviewRecord?.decision === option.value
-                      ? "review-decision-option selected"
-                      : "review-decision-option"
-                  }
+                  className={`review-decision-option review-decision-${option.key}${
+                    reviewRecord?.decision === option.value ? " selected" : ""
+                  }`}
+                  data-review-decision={option.key}
                 >
                   <input
                     type="radio"
@@ -752,13 +836,25 @@ function ResultCard({
               {sourceFact?.context ? (
                 <div>
                   <strong>{t.sourceContext}</strong>
-                  <p>{sourceFact.context}</p>
+                  <p>
+                    <HighlightedContext
+                      context={sourceFact.context}
+                      evidenceStart={sourceFact.contextEvidenceStart}
+                      evidenceEnd={sourceFact.contextEvidenceEnd}
+                    />
+                  </p>
                 </div>
               ) : null}
               {rewriteFact?.context ? (
                 <div>
                   <strong>{t.revisionContext}</strong>
-                  <p>{rewriteFact.context}</p>
+                  <p>
+                    <HighlightedContext
+                      context={rewriteFact.context}
+                      evidenceStart={rewriteFact.contextEvidenceStart}
+                      evidenceEnd={rewriteFact.contextEvidenceEnd}
+                    />
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -768,13 +864,25 @@ function ResultCard({
               {sourceFact?.context ? (
                 <>
                   <strong>{t.sourceContext}</strong>
-                  <p>{sourceFact.context}</p>
+                  <p>
+                    <HighlightedContext
+                      context={sourceFact.context}
+                      evidenceStart={sourceFact.contextEvidenceStart}
+                      evidenceEnd={sourceFact.contextEvidenceEnd}
+                    />
+                  </p>
                 </>
               ) : null}
               {rewriteFact?.context ? (
                 <>
                   <strong>{t.revisionContext}</strong>
-                  <p>{rewriteFact.context}</p>
+                  <p>
+                    <HighlightedContext
+                      context={rewriteFact.context}
+                      evidenceStart={rewriteFact.contextEvidenceStart}
+                      evidenceEnd={rewriteFact.contextEvidenceEnd}
+                    />
+                  </p>
                 </>
               ) : null}
             </details>
@@ -818,6 +926,8 @@ export default function Home() {
     ),
   );
   const [reviewPage, setReviewPage] = useState(1);
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
+  const [reviewSearch, setReviewSearch] = useState("");
   const [reviewAnnouncement, setReviewAnnouncement] = useState("");
   const [pendingReviewFocus, setPendingReviewFocus] = useState<string>();
   const [sessionFeedback, setSessionFeedback] = useState("");
@@ -841,6 +951,7 @@ export default function Home() {
   const automaticResultsHeading = useRef<HTMLHeadingElement | null>(null);
   const requiredResultsHeading = useRef<HTMLHeadingElement | null>(null);
   const reviewWorkspaceHeading = useRef<HTMLHeadingElement | null>(null);
+  const reviewSearchInput = useRef<HTMLInputElement | null>(null);
   const localeRef = useRef(locale);
   const activeReviewKey = useRef<string | undefined>(undefined);
   const reviewItemElements = useRef(new Map<string, HTMLElement>());
@@ -884,6 +995,20 @@ export default function Home() {
 
   const preservePreviousResult = (message: string, hadPrevious: boolean) =>
     hadPrevious ? `${message} ${t.previousResultPreserved}` : message;
+
+  const sessionImportErrorMessage = (error: unknown) => {
+    const currentCopy = copy[localeRef.current];
+    if (!(error instanceof KeepFactsSessionError)) {
+      return currentCopy.sessionImportFailed;
+    }
+    if (error.code === "unsupported-schema") {
+      return currentCopy.sessionSchemaUnsupported;
+    }
+    if (error.code === "too-large" || error.code === "limit-exceeded") {
+      return currentCopy.sessionLimitsExceeded;
+    }
+    return currentCopy.sessionContentInvalid;
+  };
 
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
@@ -939,7 +1064,13 @@ export default function Home() {
       setPendingReviewFocus(undefined);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [pendingReviewFocus, reviewPage, reviewQueueOrder]);
+  }, [
+    pendingReviewFocus,
+    reviewFilter,
+    reviewPage,
+    reviewQueueOrder,
+    reviewSearch,
+  ]);
 
   const total = comparison.sourceFacts.length;
   const retention = total
@@ -1010,9 +1141,80 @@ export default function Home() {
   ) => {
     if (workerRef.current) cancelPendingComparison();
     setComparisonError("");
+    setComparisonFeedback("");
     setIsExampleMode(false);
     setHasUnsavedWork(true);
     setter(value);
+  };
+
+  const updateLimitedInput = (
+    setter: (value: string) => void,
+    currentValue: string,
+    nextValue: string,
+    fieldLabel: string,
+    maximum: number,
+  ) => {
+    if (nextValue.length > maximum) {
+      setComparisonFeedback("");
+      setComparisonError(t.inputWouldExceedLimit(fieldLabel, maximum));
+      return;
+    }
+    if (nextValue === currentValue) return;
+    updateInput(setter, nextValue);
+  };
+
+  const rejectOversizedInsertion = (
+    event: {
+      currentTarget: HTMLTextAreaElement;
+      preventDefault: () => void;
+    },
+    fieldLabel: string,
+    currentValue: string,
+    maximum: number,
+    insertedText: string,
+  ) => {
+    if (!insertedText) return;
+    const selectionStart = event.currentTarget.selectionStart ?? 0;
+    const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
+    const nextLength =
+      currentValue.length - (selectionEnd - selectionStart) + insertedText.length;
+    if (nextLength <= maximum) return;
+
+    event.preventDefault();
+    setComparisonFeedback("");
+    setComparisonError(t.inputWouldExceedLimit(fieldLabel, maximum));
+  };
+
+  const guardOversizedPaste = (
+    event: ClipboardEvent<HTMLTextAreaElement>,
+    fieldLabel: string,
+    currentValue: string,
+    maximum: number,
+  ) => {
+    rejectOversizedInsertion(
+      event,
+      fieldLabel,
+      currentValue,
+      maximum,
+      event.clipboardData.getData("text/plain"),
+    );
+  };
+
+  const guardOversizedBeforeInput = (
+    event: FormEvent<HTMLTextAreaElement>,
+    fieldLabel: string,
+    currentValue: string,
+    maximum: number,
+  ) => {
+    const inputEvent = event.nativeEvent as InputEvent;
+    if (!inputEvent.inputType.startsWith("insert") || !inputEvent.data) return;
+    rejectOversizedInsertion(
+      event,
+      fieldLabel,
+      currentValue,
+      maximum,
+      inputEvent.data,
+    );
   };
 
   const confirmWorkReset = (protectOwnText = true) => {
@@ -1034,6 +1236,12 @@ export default function Home() {
     url.searchParams.set("lang", nextLocale);
     window.history.replaceState(window.history.state, "", url);
     setLocale(nextLocale);
+    setSessionFeedback("");
+    setSessionError("");
+    setReportFeedback("");
+    setComparisonFeedback("");
+    setComparisonError("");
+    setReviewAnnouncement("");
     if (hasMeaningfulOwnWork) setHasUnsavedWork(true);
   };
 
@@ -1055,6 +1263,8 @@ export default function Home() {
     setReviewRecords({});
     setReviewQueueOrder(getReviewOrder(nextComparison));
     setReviewPage(1);
+    setReviewFilter("all");
+    setReviewSearch("");
     setHasRun(true);
     setIsExampleMode(true);
     setFilter("actionable");
@@ -1080,6 +1290,8 @@ export default function Home() {
     setReviewRecords({});
     setReviewQueueOrder([]);
     setReviewPage(1);
+    setReviewFilter("all");
+    setReviewSearch("");
     setHasRun(false);
     setIsExampleMode(false);
     setFilter("all");
@@ -1108,6 +1320,8 @@ export default function Home() {
     setReviewRecords({});
     setReviewQueueOrder([]);
     setReviewPage(1);
+    setReviewFilter("all");
+    setReviewSearch("");
     setHasRun(false);
     setIsExampleMode(false);
     setFilter("all");
@@ -1244,6 +1458,8 @@ export default function Home() {
       setReviewRecords(migration.records);
       setReviewQueueOrder(getReviewOrder(data.comparison));
       setReviewPage(1);
+      setReviewFilter("all");
+      setReviewSearch("");
       setCheckedInput(input);
       setHasRun(true);
       setFilter(
@@ -1338,7 +1554,10 @@ export default function Home() {
     setReviewRecords((current) => updateReviewRecord(current, key, patch));
   };
 
-  const manualSummary = summarizeReviews(comparison, reviewRecords);
+  const manualSummary = useMemo(
+    () => summarizeReviews(comparison, reviewRecords),
+    [comparison, reviewRecords],
+  );
   const reviewOutcome = getReviewOutcome(manualSummary);
   const reportIsDraft = reviewOutcome === "draft";
   const reportHasNoReview = reviewOutcome === "no-review";
@@ -1359,32 +1578,136 @@ export default function Home() {
         "needs-changes": t.reviewNeedsChanges,
         acceptable: t.reviewAcceptable,
       }[reviewOutcome]);
-  const reviewItems = getReviewItems(comparison);
-  const reviewItemsByKey = new Map(reviewItems.map((item) => [item.key, item]));
-  const effectiveReviewOrder = [
-    ...reviewQueueOrder.filter((key) => reviewItemsByKey.has(key)),
-    ...reviewItems
-      .map(({ key }) => key)
-      .filter((key) => !reviewQueueOrder.includes(key)),
+  const reviewItems = useMemo(() => getReviewItems(comparison), [comparison]);
+  const reviewItemsByKey = useMemo(
+    () => new Map(reviewItems.map((item) => [item.key, item])),
+    [reviewItems],
+  );
+  const scopeLabels = useMemo<Record<ReviewScope, string>>(
+    () => ({
+      source: t.scopeSource,
+      required: t.scopeRequired,
+      added: t.scopeAdded,
+    }),
+    [t],
+  );
+  const effectiveReviewOrder = useMemo(() => {
+    const storedKeys = new Set(reviewQueueOrder);
+    return [
+      ...reviewQueueOrder.filter((key) => reviewItemsByKey.has(key)),
+      ...reviewItems
+        .map(({ key }) => key)
+        .filter((key) => !storedKeys.has(key)),
+    ];
+  }, [reviewItems, reviewItemsByKey, reviewQueueOrder]);
+  const reviewOrdinalByKey = useMemo(
+    () =>
+      new Map(
+        effectiveReviewOrder.map((key, index) => [key, index + 1] as const),
+      ),
+    [effectiveReviewOrder],
+  );
+  const orderedReviewItems = useMemo(
+    () =>
+      effectiveReviewOrder.flatMap((key) => {
+        const item = reviewItemsByKey.get(key);
+        return item ? [item] : [];
+      }),
+    [effectiveReviewOrder, reviewItemsByKey],
+  );
+  const reviewFilterCounts: Record<ReviewFilter, number> = {
+    all: manualSummary.total,
+    pending: manualSummary.pending,
+    confirmed: manualSummary.confirmed,
+    accepted: manualSummary.accepted,
+    ignored: manualSummary.ignored,
+  };
+  const reviewFilterOptions: Array<{
+    key: ReviewFilter;
+    label: string;
+    count: number;
+  }> = [
+    { key: "all", label: t.all, count: reviewFilterCounts.all },
+    {
+      key: "pending",
+      label: t.manualPending,
+      count: reviewFilterCounts.pending,
+    },
+    {
+      key: "confirmed",
+      label: t.manualConfirmed,
+      count: reviewFilterCounts.confirmed,
+    },
+    {
+      key: "accepted",
+      label: t.manualAccepted,
+      count: reviewFilterCounts.accepted,
+    },
+    {
+      key: "ignored",
+      label: t.manualIgnored,
+      count: reviewFilterCounts.ignored,
+    },
   ];
-  const orderedReviewItems = effectiveReviewOrder.flatMap((key) => {
-    const item = reviewItemsByKey.get(key);
-    return item ? [item] : [];
-  });
+  const normalizedReviewSearch = useMemo(
+    () =>
+      reviewSearch
+      .normalize("NFKC")
+        .trim()
+        .toLocaleLowerCase(locale === "zh" ? "zh-CN" : "en"),
+    [locale, reviewSearch],
+  );
+  const filteredReviewItems = useMemo(
+    () =>
+      orderedReviewItems.filter((item) => {
+        const record = reviewRecords[item.key];
+        const decision = record?.decision;
+        if (reviewFilter === "pending" && decision) return false;
+        if (reviewFilter !== "all" && reviewFilter !== "pending") {
+          if (decision !== reviewFilter) return false;
+        }
+        if (!normalizedReviewSearch) return true;
+
+        const compared = item.fact as ComparedFact;
+        const searchable = [
+          scopeLabels[item.scope],
+          kindLabels[locale][item.fact.kind],
+          item.fact.raw,
+          item.fact.normalized,
+          item.fact.context,
+          compared.sourceMatch?.raw,
+          compared.sourceMatch?.context,
+          compared.matched?.raw,
+          compared.matched?.context,
+          compared.possibleMatch?.raw,
+          compared.possibleMatch?.context,
+          record?.note,
+          record?.expectedFix,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join("\n")
+          .normalize("NFKC")
+          .toLocaleLowerCase(locale === "zh" ? "zh-CN" : "en");
+        return searchable.includes(normalizedReviewSearch);
+      }),
+    [
+      locale,
+      normalizedReviewSearch,
+      orderedReviewItems,
+      reviewFilter,
+      reviewRecords,
+      scopeLabels,
+    ],
+  );
   const reviewTotalPages = Math.max(
     1,
-    Math.ceil(orderedReviewItems.length / RESULT_PAGE_SIZE),
+    Math.ceil(filteredReviewItems.length / REVIEW_PAGE_SIZE),
   );
   const currentReviewPage = Math.min(reviewPage, reviewTotalPages);
-  const pagedReviewItems = orderedReviewItems.slice(
-    (currentReviewPage - 1) * RESULT_PAGE_SIZE,
-    currentReviewPage * RESULT_PAGE_SIZE,
+  const pagedReviewItems = filteredReviewItems.slice(
+    (currentReviewPage - 1) * REVIEW_PAGE_SIZE,
+    currentReviewPage * REVIEW_PAGE_SIZE,
   );
-  const scopeLabels: Record<ReviewScope, string> = {
-    source: t.scopeSource,
-    required: t.scopeRequired,
-    added: t.scopeAdded,
-  };
   const focusPageHeading = (heading: HTMLHeadingElement | null) => {
     window.requestAnimationFrame(() => {
       heading?.focus({ preventScroll: true });
@@ -1398,15 +1721,14 @@ export default function Home() {
       activeReviewKey.current,
     );
     if (!targetKey) return;
-    const nextOrder = orderReviewQueue(
-      effectiveReviewOrder,
-      reviewRecords,
-      targetKey,
+    const pendingOrder = effectiveReviewOrder.filter(
+      (key) => !reviewRecords[key]?.decision,
     );
-    const targetIndex = nextOrder.indexOf(targetKey);
+    const targetIndex = pendingOrder.indexOf(targetKey);
     const target = reviewItemsByKey.get(targetKey);
-    setReviewQueueOrder(nextOrder);
-    setReviewPage(Math.floor(targetIndex / RESULT_PAGE_SIZE) + 1);
+    setReviewFilter("pending");
+    setReviewSearch("");
+    setReviewPage(Math.floor(targetIndex / REVIEW_PAGE_SIZE) + 1);
     setPendingReviewFocus(targetKey);
     if (target) {
       setReviewAnnouncement(
@@ -1554,6 +1876,8 @@ export default function Home() {
     setResultPage(1);
     setRequiredPage(1);
     setReviewPage(1);
+    setReviewFilter("all");
+    setReviewSearch("");
     setComparisonError("");
     setComparisonFeedback("");
     setReviewAnnouncement("");
@@ -1601,14 +1925,24 @@ export default function Home() {
     setImportingSession(true);
     setSessionError("");
     setSessionFeedback("");
-    if (
-      !file.name.toLowerCase().endsWith(".keepfacts.json") ||
-      file.size <= 0 ||
-      file.size > KEEPFACTS_SESSION_MAX_BYTES
-    ) {
+    if (!file.name.toLowerCase().endsWith(".keepfacts.json")) {
       if (isCurrentImport()) {
         setImportingSession(false);
-        setSessionError(t.sessionImportFailed);
+        setSessionError(t.sessionFileTypeInvalid);
+      }
+      return;
+    }
+    if (file.size > KEEPFACTS_SESSION_MAX_BYTES) {
+      if (isCurrentImport()) {
+        setImportingSession(false);
+        setSessionError(t.sessionFileTooLarge);
+      }
+      return;
+    }
+    if (file.size <= 0) {
+      if (isCurrentImport()) {
+        setImportingSession(false);
+        setSessionError(t.sessionContentInvalid);
       }
       return;
     }
@@ -1618,10 +1952,10 @@ export default function Home() {
       const contents = await file.text();
       if (!isCurrentImport()) return;
       session = parseKeepFactsSession(contents);
-    } catch {
+    } catch (error) {
       if (isCurrentImport()) {
         setImportingSession(false);
-        setSessionError(copy[localeRef.current].sessionImportFailed);
+        setSessionError(sessionImportErrorMessage(error));
       }
       return;
     }
@@ -1662,9 +1996,13 @@ export default function Home() {
       setImportingSession(false);
       return true;
     };
-    const fail = () => {
+    const fail = (message?: string) => {
       if (!finish()) return;
-      setSessionError(copy[localeRef.current].sessionImportFailed);
+      setSessionError(
+        message === "comparison-limit-exceeded"
+          ? copy[localeRef.current].sessionLimitsExceeded
+          : copy[localeRef.current].sessionImportFailed,
+      );
     };
     worker.onmessage = ({ data }: MessageEvent<CompareWorkerResponse>) => {
       if (
@@ -1674,7 +2012,7 @@ export default function Home() {
         return;
       }
       if (data.type === "error") {
-        fail();
+        fail(data.message);
         return;
       }
       if (!finish()) return;
@@ -1682,13 +2020,13 @@ export default function Home() {
         data.comparison.sourceFacts.length > 1_000 ||
         data.comparison.requiredCount > 1_000
       ) {
-        setSessionError(copy[localeRef.current].sessionImportFailed);
+        setSessionError(copy[localeRef.current].sessionLimitsExceeded);
         return;
       }
       commitImportedSession(session, data.comparison);
     };
-    worker.onerror = fail;
-    worker.onmessageerror = fail;
+    worker.onerror = () => fail();
+    worker.onmessageerror = () => fail();
     importTimeout.current = window.setTimeout(fail, WORKER_TIMEOUT_MS);
     const request: CompareWorkerRequest = {
       type: "compare",
@@ -1913,16 +2251,47 @@ export default function Home() {
                 <h2>{t.source}</h2>
                 <p>{t.sourceHint}</p>
               </div>
-              <span className="char-count">
-                {source.length} {t.chars}
+              <span
+                className={`char-count${
+                  source.length >= KEEPFACTS_MAX_TEXT_LENGTH
+                    ? " char-count-limit"
+                    : ""
+                }`}
+                id="source-character-limit"
+              >
+                {t.characterLimit(source.length, KEEPFACTS_MAX_TEXT_LENGTH)}
               </span>
             </div>
             <textarea
               ref={sourceInput}
               aria-label={t.source}
+              aria-describedby="source-character-limit"
               value={source}
-              maxLength={KEEPFACTS_MAX_TEXT_LENGTH}
-              onChange={(event) => updateInput(setSource, event.target.value)}
+              onBeforeInput={(event) =>
+                guardOversizedBeforeInput(
+                  event,
+                  t.source,
+                  source,
+                  KEEPFACTS_MAX_TEXT_LENGTH,
+                )
+              }
+              onPaste={(event) =>
+                guardOversizedPaste(
+                  event,
+                  t.source,
+                  source,
+                  KEEPFACTS_MAX_TEXT_LENGTH,
+                )
+              }
+              onChange={(event) =>
+                updateLimitedInput(
+                  setSource,
+                  source,
+                  event.target.value,
+                  t.source,
+                  KEEPFACTS_MAX_TEXT_LENGTH,
+                )
+              }
               placeholder={t.placeholderSource}
               spellCheck="false"
             />
@@ -1935,15 +2304,46 @@ export default function Home() {
                 <h2>{t.revision}</h2>
                 <p>{t.revisionHint}</p>
               </div>
-              <span className="char-count">
-                {revision.length} {t.chars}
+              <span
+                className={`char-count${
+                  revision.length >= KEEPFACTS_MAX_TEXT_LENGTH
+                    ? " char-count-limit"
+                    : ""
+                }`}
+                id="revision-character-limit"
+              >
+                {t.characterLimit(revision.length, KEEPFACTS_MAX_TEXT_LENGTH)}
               </span>
             </div>
             <textarea
               aria-label={t.revision}
+              aria-describedby="revision-character-limit"
               value={revision}
-              maxLength={KEEPFACTS_MAX_TEXT_LENGTH}
-              onChange={(event) => updateInput(setRevision, event.target.value)}
+              onBeforeInput={(event) =>
+                guardOversizedBeforeInput(
+                  event,
+                  t.revision,
+                  revision,
+                  KEEPFACTS_MAX_TEXT_LENGTH,
+                )
+              }
+              onPaste={(event) =>
+                guardOversizedPaste(
+                  event,
+                  t.revision,
+                  revision,
+                  KEEPFACTS_MAX_TEXT_LENGTH,
+                )
+              }
+              onChange={(event) =>
+                updateLimitedInput(
+                  setRevision,
+                  revision,
+                  event.target.value,
+                  t.revision,
+                  KEEPFACTS_MAX_TEXT_LENGTH,
+                )
+              }
               placeholder={t.placeholderRevision}
               spellCheck="false"
             />
@@ -1954,12 +2354,46 @@ export default function Home() {
           <summary>
             <span>{t.required}</span>
             <small>{t.requiredHint}</small>
+            <output
+              className={`char-count required-char-count${
+                required.length >= KEEPFACTS_MAX_REQUIRED_LENGTH
+                  ? " char-count-limit"
+                  : ""
+              }`}
+              id="required-character-limit"
+            >
+              {t.characterLimit(required.length, KEEPFACTS_MAX_REQUIRED_LENGTH)}
+            </output>
           </summary>
           <textarea
             aria-label={t.required}
+            aria-describedby="required-character-limit"
             value={required}
-            maxLength={KEEPFACTS_MAX_REQUIRED_LENGTH}
-            onChange={(event) => updateInput(setRequired, event.target.value)}
+            onBeforeInput={(event) =>
+              guardOversizedBeforeInput(
+                event,
+                t.required,
+                required,
+                KEEPFACTS_MAX_REQUIRED_LENGTH,
+              )
+            }
+            onPaste={(event) =>
+              guardOversizedPaste(
+                event,
+                t.required,
+                required,
+                KEEPFACTS_MAX_REQUIRED_LENGTH,
+              )
+            }
+            onChange={(event) =>
+              updateLimitedInput(
+                setRequired,
+                required,
+                event.target.value,
+                t.required,
+                KEEPFACTS_MAX_REQUIRED_LENGTH,
+              )
+            }
             placeholder={t.requiredPlaceholder}
             spellCheck="false"
           />
@@ -2020,7 +2454,7 @@ export default function Home() {
             type="file"
             aria-hidden="true"
             tabIndex={-1}
-            accept=".keepfacts.json,application/json"
+            accept=".keepfacts.json"
             onChange={(event) => void importSessionFile(event)}
           />
         </div>
@@ -2053,6 +2487,16 @@ export default function Home() {
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {comparisonFeedback}
       </span>
+      {comparisonFeedback ? (
+        <p
+          className={`comparison-feedback${busy ? " comparison-feedback-busy" : ""}`}
+          data-testid="comparison-feedback"
+          aria-hidden="true"
+        >
+          <span aria-hidden="true" />
+          {comparisonFeedback}
+        </p>
+      ) : null}
 
       {hasRun ? (
         <section className="results-section" id="results">
@@ -2177,56 +2621,127 @@ export default function Home() {
                   </span>
                 )}
                 <div className="review-actions" role="group" aria-label={t.reviewToolbar}>
-                  {manualSummary.total ? (
-                    <>
-                      <button
-                        type="button"
-                        data-review-action="next-pending"
-                        onClick={moveToNextPending}
-                        disabled={busy || resultsOutdated || manualSummary.pending === 0}
-                      >
-                        {t.nextPending}
-                      </button>
-                      <button
-                        type="button"
-                        data-review-action="copy-fix-list"
-                        onClick={copyFixList}
-                        disabled={busy || resultsOutdated || manualSummary.confirmed === 0}
-                      >
-                        {t.copyFixList}
-                      </button>
-                    </>
+                  {resultsOutdated ? (
+                    <button
+                      type="button"
+                      data-review-action="recheck"
+                      onClick={runComparison}
+                      disabled={busy || !source.trim() || !revision.trim()}
+                      aria-busy={busy}
+                    >
+                      {busy ? t.comparing : t.recheckNow}
+                    </button>
+                  ) : manualSummary.total ? (
+                    <button
+                      type="button"
+                      data-review-action="next-pending"
+                      onClick={moveToNextPending}
+                      disabled={busy || manualSummary.pending === 0}
+                    >
+                      {t.nextPending}
+                    </button>
                   ) : null}
-                  <div className="review-export-actions">
-                    <button
-                      type="button"
-                      data-review-action="copy-report"
-                      onClick={copyReport}
-                      disabled={busy || resultsOutdated}
-                    >
-                      {reportHasNoReview
-                        ? t.copyNeutralReport
-                        : reportIsDraft
-                          ? t.copyDraftReport
-                          : t.copyFinalReport}
-                    </button>
-                    <button
-                      type="button"
-                      data-review-action="download-report"
-                      onClick={downloadReport}
-                      disabled={busy || resultsOutdated}
-                    >
-                      {reportHasNoReview
-                        ? t.downloadNeutralReport
-                        : reportIsDraft
-                          ? t.downloadDraftReport
-                          : t.downloadFinalReport}
-                    </button>
-                  </div>
                 </div>
               </div>
+            </div>
+            <div
+              className="review-secondary-actions"
+              role="group"
+              aria-label={t.reviewToolbar}
+            >
+              {manualSummary.total ? (
+                <button
+                  type="button"
+                  data-review-action="copy-fix-list"
+                  onClick={copyFixList}
+                  disabled={busy || resultsOutdated || manualSummary.confirmed === 0}
+                >
+                  {t.copyFixList}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                data-review-action="copy-report"
+                onClick={copyReport}
+                disabled={busy || resultsOutdated}
+              >
+                {reportHasNoReview
+                  ? t.copyNeutralReport
+                  : reportIsDraft
+                    ? t.copyDraftReport
+                    : t.copyFinalReport}
+              </button>
+              <button
+                type="button"
+                data-review-action="download-report"
+                onClick={downloadReport}
+                disabled={busy || resultsOutdated}
+              >
+                {reportHasNoReview
+                  ? t.downloadNeutralReport
+                  : reportIsDraft
+                    ? t.downloadDraftReport
+                    : t.downloadFinalReport}
+              </button>
               <span className="report-feedback">{reportFeedback}</span>
             </div>
+            {manualSummary.total ? (
+              <div
+                className="review-browse-tools"
+                aria-label={t.reviewBrowseLabel}
+              >
+                <div
+                  className="review-filter-tabs"
+                  role="group"
+                  aria-label={t.reviewFilterLabel}
+                >
+                  {reviewFilterOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      aria-pressed={reviewFilter === option.key}
+                      aria-controls={
+                        filteredReviewItems.length ? "review-queue" : undefined
+                      }
+                      data-review-filter={option.key}
+                      className={reviewFilter === option.key ? "active" : ""}
+                      onClick={() => {
+                        setReviewFilter(option.key);
+                        setReviewPage(1);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      <strong>{option.count}</strong>
+                    </button>
+                  ))}
+                </div>
+                <label className="review-search">
+                  <span>{t.reviewSearch}</span>
+                  <input
+                    ref={reviewSearchInput}
+                    type="search"
+                    value={reviewSearch}
+                    maxLength={200}
+                    placeholder={t.reviewSearchPlaceholder}
+                    onChange={(event) => {
+                      setReviewSearch(event.target.value);
+                      setReviewPage(1);
+                    }}
+                  />
+                </label>
+                <span
+                  className="review-visible-count"
+                  data-testid="review-visible-count"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {t.reviewVisibleItems(
+                    filteredReviewItems.length,
+                    manualSummary.total,
+                  )}
+                </span>
+              </div>
+            ) : null}
             <span
               className="sr-only"
               role="status"
@@ -2238,10 +2753,14 @@ export default function Home() {
             </span>
 
             {pagedReviewItems.length ? (
-              <ol className="review-queue" aria-label={t.reviewQueue}>
+              <ol
+                className="review-queue"
+                id="review-queue"
+                aria-label={t.reviewQueue}
+              >
                 {pagedReviewItems.map((item) => {
                   const added = item.scope === "added";
-                  const position = effectiveReviewOrder.indexOf(item.key) + 1;
+                  const position = reviewOrdinalByKey.get(item.key) ?? 0;
                   return (
                     <li
                       key={item.key}
@@ -2285,6 +2804,39 @@ export default function Home() {
                                 ? `${scopeLabels[item.scope]} ${item.fact.raw}：${decisionLabel}。${t.remainingPending(remaining)}`
                                 : `${scopeLabels[item.scope]} ${item.fact.raw}: ${decisionLabel}. ${t.remainingPending(remaining)}`,
                             );
+                            const remainsVisible =
+                              reviewFilter === "all" ||
+                              (reviewFilter === "pending"
+                                ? !nextDecision
+                                : nextDecision === reviewFilter);
+                            if (!remainsVisible) {
+                              const remainingVisibleItems = filteredReviewItems.filter(
+                                (candidate) => candidate.key !== item.key,
+                              );
+                              const currentVisibleIndex = filteredReviewItems.findIndex(
+                                (candidate) => candidate.key === item.key,
+                              );
+                              const nextVisible =
+                                remainingVisibleItems[
+                                  Math.min(
+                                    Math.max(currentVisibleIndex, 0),
+                                    remainingVisibleItems.length - 1,
+                                  )
+                                ];
+                              if (nextVisible) {
+                                setReviewPage(
+                                  Math.floor(
+                                    remainingVisibleItems.indexOf(nextVisible) /
+                                      REVIEW_PAGE_SIZE,
+                                  ) + 1,
+                                );
+                                setPendingReviewFocus(nextVisible.key);
+                              } else {
+                                window.requestAnimationFrame(() =>
+                                  reviewSearchInput.current?.focus(),
+                                );
+                              }
+                            }
                           }
                         }}
                         reviewDisabled={busy || resultsOutdated}
@@ -2300,7 +2852,27 @@ export default function Home() {
                 })}
               </ol>
             ) : null}
-            {orderedReviewItems.length > RESULT_PAGE_SIZE ? (
+            {manualSummary.total && filteredReviewItems.length === 0 ? (
+              <div className="empty-state review-empty-state">
+                <span className="empty-state-mark" aria-hidden="true" />
+                <h4>{t.reviewNoMatchesTitle}</h4>
+                <p>{t.reviewNoMatchesBody}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewFilter("all");
+                    setReviewSearch("");
+                    setReviewPage(1);
+                    window.requestAnimationFrame(() =>
+                      reviewSearchInput.current?.focus(),
+                    );
+                  }}
+                >
+                  {t.resetReviewBrowse}
+                </button>
+              </div>
+            ) : null}
+            {filteredReviewItems.length > REVIEW_PAGE_SIZE ? (
               <nav className="review-pagination" aria-label={t.reviewQueue}>
                 <button
                   type="button"
@@ -2313,7 +2885,11 @@ export default function Home() {
                   {t.previousPage}
                 </button>
                 <span aria-current="page">
-                  {t.pageStatus(currentReviewPage, reviewTotalPages, orderedReviewItems.length)}
+                  {t.pageStatus(
+                    currentReviewPage,
+                    reviewTotalPages,
+                    filteredReviewItems.length,
+                  )}
                 </span>
                 <button
                   type="button"

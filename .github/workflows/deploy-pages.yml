@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    tags: ["v*"]
+  # workflow_run executes from the default branch. That keeps the Pages OIDC
+  # ref on main (as required by the github-pages environment) while the build
+  # below remains cryptographically bound to the successful tag CI run.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -12,23 +16,38 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  # Non-release CI completions get an isolated group, so a skipped main/PR run
+  # cannot cancel a real release deployment that is already in progress.
+  group: >-
+    ${{ ((github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main') ||
+         (github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          startsWith(github.event.workflow_run.head_branch, 'v'))) &&
+        'pages' || format('pages-skipped-{0}', github.run_id) }}
   cancel-in-progress: true
 
 jobs:
   build:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || format('refs/tags/{0}', inputs.release_tag) }}
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -37,17 +56,44 @@ jobs:
       - name: Resolve and verify release tag
         id: release
         env:
-          REQUESTED_TAG: ${{ inputs.release_tag }}
+          AUTOMATIC_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          AUTOMATIC_RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           release_tag="v$(node -p "require('./package.json').version")"
-          if [[ -n "$REQUESTED_TAG" && "$REQUESTED_TAG" != "$release_tag" ]]; then
-            echo "Requested tag $REQUESTED_TAG does not match package version $release_tag" >&2
+          if [[ ! "$release_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Package version does not produce a valid release tag: $release_tag" >&2
             exit 1
           fi
-          release_sha="$(git rev-parse "${release_tag}^{commit}")"
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            requested_tag="$AUTOMATIC_RELEASE_TAG"
+            verified_sha="$AUTOMATIC_RELEASE_SHA"
+          else
+            requested_tag="$REQUESTED_RELEASE_TAG"
+            verified_sha="$(git rev-parse HEAD)"
+          fi
+          if [[ "$requested_tag" != "$release_tag" ]]; then
+            echo "Requested tag $requested_tag does not match package version $release_tag" >&2
+            exit 1
+          fi
+          if [[ ! "$verified_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release SHA must be a full lowercase Git SHA, received $verified_sha" >&2
+            exit 1
+          fi
+
+          release_sha="$(git rev-parse "refs/tags/${release_tag}^{commit}")"
           checked_out_sha="$(git rev-parse HEAD)"
           if [[ "$release_sha" != "$checked_out_sha" ]]; then
             echo "Tag $release_tag does not point to checked-out commit $checked_out_sha" >&2
+            exit 1
+          fi
+          if [[ "$verified_sha" != "$checked_out_sha" ]]; then
+            echo "Verified CI commit $verified_sha does not match checked-out commit $checked_out_sha" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$checked_out_sha" refs/remotes/origin/main; then
+            echo "Release commit $checked_out_sha is not reachable from origin/main" >&2
             exit 1
           fi
           echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
@@ -60,12 +106,11 @@ jobs:
         env:
           GITHUB_REF_NAME: ${{ steps.release.outputs.tag }}
           GITHUB_REF_TYPE: tag
+          KEEPFACTS_REQUIRE_ORIGIN_MAIN: "true"
           VITE_COMMIT_SHA: ${{ steps.release.outputs.sha }}
         run: npm run check:all
       - name: Audit dependencies
         run: npm audit --audit-level=high
-      - name: Configure Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -76,8 +121,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
+    permissions:
+      pages: write
+      id-token: write
     steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

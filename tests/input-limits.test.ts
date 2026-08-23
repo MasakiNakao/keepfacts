@@ -7,6 +7,7 @@ import {
   KEEPFACTS_MAX_REQUIRED_ITEMS,
   KEEPFACTS_MAX_REQUIRED_LENGTH,
   KEEPFACTS_MAX_TEXT_LENGTH,
+  splitKeepFactsRequiredLines,
   type KeepFactsInput,
 } from "../src/lib/input-limits.ts";
 
@@ -113,6 +114,28 @@ test("enforces required item count and per-item UTF-16 length exactly", () => {
   assert.deepEqual(
     getKeepFactsInputLimitViolation(
       input({ required: `first\n${unicodeItem}x` }),
+    ),
+    {
+      code: "input-limit-exceeded",
+      field: "required",
+      reason: "required-item-length",
+      actual: KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH + 1,
+      maximum: KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH,
+      itemIndex: 1,
+    },
+  );
+});
+
+test("treats imported CR and Unicode separators as required-item line breaks", () => {
+  assert.deepEqual(
+    splitKeepFactsRequiredLines("alpha\r\nbeta\rgamma\u2028delta\u2029epsilon"),
+    ["alpha", "beta", "gamma", "delta", "epsilon"],
+  );
+
+  const oversized = "x".repeat(KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH + 1);
+  assert.deepEqual(
+    getKeepFactsInputLimitViolation(
+      input({ required: `first\r${oversized}` }),
     ),
     {
       code: "input-limit-exceeded",

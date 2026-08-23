@@ -353,6 +353,8 @@ function syntheticSnapshot(prefix: string, count: number): ReviewSnapshot {
       start,
       end,
       context: `${lead}${raw}${tail}`.trim(),
+      contextEvidenceStart: lead.length,
+      contextEvidenceEnd: lead.length + raw.length,
       status: "review",
       reviewReason: "missing",
     });

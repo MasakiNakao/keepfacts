@@ -257,5 +257,40 @@
     "source": "Alpha 100 and Beta 100.",
     "revision": "Beta 100 and Alpha 80.",
     "expected": { "preserved": 1, "review": 1, "added": 0 }
+  },
+  {
+    "id": "suffix-currency-equivalence",
+    "category": "money",
+    "source": "Budget is 100 USD.",
+    "revision": "Budget remains USD 100.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "suffix-currency-change",
+    "category": "money",
+    "source": "Budget is 100 USD.",
+    "revision": "Budget is 100 CNY.",
+    "expected": { "preserved": 0, "review": 1, "added": 0 }
+  },
+  {
+    "id": "day-first-english-date",
+    "category": "date",
+    "source": "Deadline is 15 September 2026.",
+    "revision": "Deadline is September 15, 2026.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
+  },
+  {
+    "id": "malformed-suffix-currency-boundary",
+    "category": "money",
+    "source": "Code is 1,23 USD.",
+    "revision": "Code is 1,23 USD.",
+    "expected": { "preserved": 0, "review": 0, "added": 0 }
+  },
+  {
+    "id": "parenthesized-measurement-grouping",
+    "category": "measurement",
+    "source": "Package weight is (5 kg).",
+    "revision": "Package weight is 5 kg.",
+    "expected": { "preserved": 1, "review": 0, "added": 0 }
   }
 ]

@@ -9,9 +9,11 @@ compatibility.
 
 Security and maintenance fixes target only the latest tagged release on a
 best-effort basis. Older tags do not receive a separate support branch. The
-project provides no LTS branch and no response-time or remediation SLA. Future
-patch releases are limited to security, bug, compatibility, accessibility,
-documentation, and release-infrastructure fixes.
+project provides no LTS branch and no response-time or remediation SLA. Patch
+releases are limited to security, bug, compatibility, accessibility,
+documentation, and release-infrastructure fixes. Any later feature or
+recognition expansion requires a separately scoped minor release and evidence
+appropriate to its claim.
 
 ## Local processing and exported files
 

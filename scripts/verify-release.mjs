@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 
+import { getReleaseIdentityErrors } from "./verify-release-identity.mjs";
+
 const rootUrl = new URL("../", import.meta.url);
 
 async function readJson(relativePath) {
@@ -16,6 +18,30 @@ function readGitRevision(revision) {
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
+    return undefined;
+  }
+}
+
+function isGitAncestor(ancestor, descendant) {
+  try {
+    execFileSync(
+      "git",
+      ["merge-base", "--is-ancestor", ancestor, descendant],
+      {
+        cwd: rootUrl,
+        stdio: "ignore",
+      },
+    );
+    return true;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      error.status === 1
+    ) {
+      return false;
+    }
     return undefined;
   }
 }
@@ -118,48 +144,33 @@ for (const { label, contents, pattern } of documentationVersionChecks) {
 const isTagBuild =
   process.env.GITHUB_REF_TYPE === "tag" ||
   process.env.GITHUB_REF?.startsWith("refs/tags/");
-
-if (isTagBuild) {
-  const tagName =
-    process.env.GITHUB_REF_NAME ?? process.env.GITHUB_REF?.slice("refs/tags/".length);
-  const expectedTag = `v${packageVersion}`;
-
-  if (tagName !== expectedTag) {
-    errors.push(
-      `release tag ${String(tagName)} does not match package version ${expectedTag}`,
-    );
-  }
-
-  const tagCommit = readGitRevision(`${expectedTag}^{commit}`);
-  const headCommit = readGitRevision("HEAD");
-  if (!tagCommit) {
-    errors.push(`release tag ${expectedTag} cannot be resolved to a commit`);
-  } else if (!headCommit) {
-    errors.push("the checked-out HEAD commit cannot be resolved");
-  } else if (tagCommit !== headCommit) {
-    errors.push(
-      `release tag ${expectedTag} points to ${tagCommit}, not checked-out commit ${headCommit}`,
-    );
-  }
-}
-
 const buildCommit = process.env.VITE_COMMIT_SHA?.trim();
-if (buildCommit) {
-  const fullCommitPattern = /^[0-9a-f]{40}$/u;
-  const headCommit = readGitRevision("HEAD");
+const expectedTag = `v${packageVersion}`;
+const tagName =
+  process.env.GITHUB_REF_NAME ?? process.env.GITHUB_REF?.slice("refs/tags/".length);
+const headCommit = isTagBuild || buildCommit
+  ? readGitRevision("HEAD")
+  : undefined;
+const requireOriginMain =
+  process.env.KEEPFACTS_REQUIRE_ORIGIN_MAIN?.trim().toLowerCase() === "true";
 
-  if (!fullCommitPattern.test(buildCommit)) {
-    errors.push(
-      `VITE_COMMIT_SHA must be a full lowercase 40-character Git SHA, received ${buildCommit}`,
-    );
-  } else if (!headCommit) {
-    errors.push("the checked-out HEAD commit cannot be resolved");
-  } else if (buildCommit !== headCommit) {
-    errors.push(
-      `VITE_COMMIT_SHA ${buildCommit} does not match checked-out commit ${headCommit}`,
-    );
-  }
-}
+errors.push(
+  ...getReleaseIdentityErrors({
+    isTagBuild,
+    expectedTag,
+    tagName,
+    tagCommit: isTagBuild
+      ? readGitRevision(`refs/tags/${expectedTag}^{commit}`)
+      : undefined,
+    headCommit,
+    buildCommit,
+    requireOriginMain,
+    originMainContainsHead:
+      isTagBuild && requireOriginMain && headCommit
+        ? isGitAncestor(headCommit, "refs/remotes/origin/main")
+        : undefined,
+  }),
+);
 
 const [indexHtml, shareCardRenderer] = await Promise.all([
   readFile(new URL("index.html", rootUrl), "utf8"),

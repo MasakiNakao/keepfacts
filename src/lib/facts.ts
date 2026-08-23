@@ -1,3 +1,5 @@
+import { splitKeepFactsRequiredLines } from "./input-limits.ts";
+
 export type FactKind =
   | "required"
   | "money"
@@ -23,6 +25,8 @@ export interface Fact {
   start: number;
   end: number;
   context: string;
+  contextEvidenceStart: number;
+  contextEvidenceEnd: number;
 }
 
 export interface ComparedFact extends Fact {
@@ -45,6 +49,11 @@ export interface FactComparison {
   requiredMissingCount: number;
   requiredNotInSourceCount: number;
   requiredCheckableCount: number;
+}
+
+export interface CompareFactsOptions {
+  /** Stop before building the dense pairing matrix when either side is too large. */
+  maxFactsPerSide?: number;
 }
 
 interface PatternDefinition {
@@ -265,6 +274,13 @@ function normalizeDate(value: string) {
     return `${english[3]}-${MONTHS[english[1]]}-${english[2].padStart(2, "0")}`;
   }
 
+  const englishDayFirst = cleaned.match(
+    /(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+),?\s+((?:19|20)\d{2})/,
+  );
+  if (englishDayFirst && MONTHS[englishDayFirst[2]]) {
+    return `${englishDayFirst[3]}-${MONTHS[englishDayFirst[2]]}-${englishDayFirst[1].padStart(2, "0")}`;
+  }
+
   return compact(value);
 }
 
@@ -332,6 +348,31 @@ function validateTime(value: string) {
     : hour <= 23n && minute <= 59n;
 }
 
+function validateEmail(value: string) {
+  const normalized = toAscii(value).toLowerCase();
+  const [local, domain, extra] = normalized.split("@");
+  if (!local || !domain || extra !== undefined) return false;
+  if (normalized.length > 254 || local.length > 64 || domain.length > 253) {
+    return false;
+  }
+  if (
+    local.startsWith(".") ||
+    local.endsWith(".") ||
+    local.includes("..")
+  ) {
+    return false;
+  }
+
+  const labels = domain.split(".");
+  if (labels.length < 2) return false;
+  return labels.every(
+    (label) =>
+      label.length >= 1 &&
+      label.length <= 63 &&
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label),
+  );
+}
+
 const UNIT_ALIASES: Record<string, string> = {
   people: "person",
   person: "person",
@@ -385,13 +426,13 @@ const UNIT_ALIASES: Record<string, string> = {
 
 function normalizeMeasurement(value: string) {
   let cleaned = compactExact(value);
-  const accounting = cleaned.startsWith("(") && cleaned.endsWith(")");
-  if (accounting) cleaned = cleaned.slice(1, -1);
+  const parenthesized = cleaned.startsWith("(") && cleaned.endsWith(")");
+  if (parenthesized) cleaned = cleaned.slice(1, -1);
   const match = cleaned.match(
     /^([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)([^\d.,+\-]+)$/u,
   );
   if (!match) return cleaned;
-  const amount = parseDecimal(`${accounting ? "-" : ""}${match[1]}`);
+  const amount = parseDecimal(match[1]);
   if (!amount) return cleaned;
   const unit = UNIT_ALIASES[match[2]] ?? match[2];
   return normalizeUnitValue(amount, unit);
@@ -532,6 +573,20 @@ function makeScanView(text: string): ScanView {
   return { text: normalizedText, starts, ends };
 }
 
+const DECIMAL_TOKEN_PATTERN =
+  String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?`;
+const SIGN_PATTERN = String.raw`[+＋﹢\-−﹣－]?`;
+const MONEY_SCALE_PATTERN =
+  String.raw`(?:\s*(?:(?:k|m|bn)(?![A-Z])|万|亿))?`;
+const CURRENCY_PREFIX_PATTERN =
+  String.raw`(?:US\$|C\$|A\$|HK\$|(?:USD|CAD|AUD|HKD)\s*\$?|EUR|GBP|CNY|RMB|JPY|人民币|美元|欧元|英镑|日元|港元|加元|澳元|[$€£¥￥])`;
+const CURRENCY_SUFFIX_PATTERN =
+  String.raw`(?:US\$|C\$|A\$|HK\$|USD|CAD|AUD|HKD|EUR|GBP|CNY|RMB|JPY|人民币|美元|欧元|英镑|日元|港元|加元|澳元|元|[$€£¥￥])`;
+const MONEY_PATTERN = new RegExp(
+  String.raw`(?:\((?:${CURRENCY_PREFIX_PATTERN}\s*${DECIMAL_TOKEN_PATTERN}${MONEY_SCALE_PATTERN}|${DECIMAL_TOKEN_PATTERN}${MONEY_SCALE_PATTERN}\s*${CURRENCY_SUFFIX_PATTERN}(?![\p{L}\p{N}_]))\)|(?<![A-Z0-9_])${SIGN_PATTERN}${CURRENCY_PREFIX_PATTERN}\s*${SIGN_PATTERN}${DECIMAL_TOKEN_PATTERN}(?!,\d)${MONEY_SCALE_PATTERN}(?![A-Z_]|\d|[.,]\d)|(?<![\d.,])${SIGN_PATTERN}${DECIMAL_TOKEN_PATTERN}(?!,\d)${MONEY_SCALE_PATTERN}\s*${CURRENCY_SUFFIX_PATTERN}(?![\p{L}\p{N}_]))`,
+  "giu",
+);
+
 const PATTERNS: PatternDefinition[] = [
   {
     kind: "url",
@@ -540,8 +595,10 @@ const PATTERNS: PatternDefinition[] = [
   },
   {
     kind: "email",
-    pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu,
+    pattern:
+      /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,253}\.[A-Z]{2,63}(?![A-Z0-9_-]|\.[A-Z0-9])/giu,
     normalize: (value) => compact(value),
+    validate: validateEmail,
   },
   {
     kind: "version",
@@ -551,7 +608,7 @@ const PATTERNS: PatternDefinition[] = [
   {
     kind: "date",
     pattern:
-      /(?:19|20)\d{2}\s*(?:年|[-/.])\s*\d{1,2}(?:\s*(?:月|[-/.])\s*\d{1,2}\s*日?)?|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+(?:19|20)\d{2}\b/giu,
+      /(?:19|20)\d{2}\s*(?:年|[-/.])\s*\d{1,2}(?:\s*(?:月|[-/.])\s*\d{1,2}\s*日?)?|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+(?:19|20)\d{2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?),?\s+(?:19|20)\d{2}\b/giu,
     normalize: normalizeDate,
     validate: validateDate,
   },
@@ -569,14 +626,13 @@ const PATTERNS: PatternDefinition[] = [
   },
   {
     kind: "money",
-    pattern:
-      /(?:\((?:(?:US\$|C\$|A\$|HK\$|(?:USD|CAD|AUD|HKD)\s*\$?|EUR|GBP|CNY|RMB|JPY|人民币|美元|欧元|英镑|日元|港元|加元|澳元|[$€£¥￥])\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?:\s*(?:k|m|bn|万|亿))?|(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元))\)|[+＋﹢\-−﹣－]?(?:US\$|C\$|A\$|HK\$|(?:USD|CAD|AUD|HKD)\s*\$?|EUR|GBP|CNY|RMB|JPY|人民币|美元|欧元|英镑|日元|港元|加元|澳元|[$€£¥￥])\s*[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?!,\d)(?:\s*(?:k|m|bn|万|亿))?|[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?!,\d)\s*(?:万|亿)?\s*(?:元|人民币|美元|欧元|英镑|日元|港元|加元|澳元))/giu,
+    pattern: MONEY_PATTERN,
     normalize: normalizeMoney,
   },
   {
     kind: "percentage",
     pattern:
-      /(?:\((?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:%|％|percent\b)\)|百分之\s*[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?|[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:%|％|percent\b))/giu,
+      /(?:\((?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?\s*(?:%|％|percent\b)\)|百分之\s*[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?|(?<![\d.,])[+＋﹢\-−﹣－]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:[.．]\d+)?(?!,\d)\s*(?:%|％|percent\b))/giu,
     normalize: normalizePercentage,
   },
   {
@@ -605,15 +661,18 @@ const PATTERNS: PatternDefinition[] = [
   },
 ];
 
-function overlaps(start: number, end: number, facts: Fact[]) {
-  return facts.some((fact) => start < fact.end && end > fact.start);
+function overlaps(start: number, end: number, occupied: Uint8Array) {
+  for (let index = start; index < end; index += 1) {
+    if (occupied[index]) return true;
+  }
+  return false;
 }
 
 function isBinaryRangeSign(
   definition: PatternDefinition,
   scan: ScanView,
   scanStart: number,
-  facts: Fact[],
+  acceptedEnds: Set<number>,
 ) {
   if (
     (definition.kind !== "money" && definition.kind !== "percentage") ||
@@ -625,23 +684,61 @@ function isBinaryRangeSign(
   const rawStart = scan.starts[scanStart] ?? 0;
   return (
     isAsciiDigit(scan.text[scanStart - 1]) ||
-    facts.some((fact) => fact.end === rawStart)
+    acceptedEnds.has(rawStart)
   );
 }
 
 function makeContext(text: string, start: number, end: number) {
   const radius = 30;
-  const before = text.slice(Math.max(0, start - radius), start);
-  const value = text.slice(start, end);
-  const after = text.slice(end, Math.min(text.length, end + radius));
-  return `${start > radius ? "…" : ""}${before}${value}${after}${end + radius < text.length ? "…" : ""}`
-    .replace(/\s+/g, " ")
-    .trim();
+  const snippetStart = Math.max(0, start - radius);
+  const snippetEnd = Math.min(text.length, end + radius);
+  const leadingEllipsis = start > radius ? "…" : "";
+  const trailingEllipsis = end + radius < text.length ? "…" : "";
+  const snippet = `${leadingEllipsis}${text.slice(snippetStart, snippetEnd)}${trailingEllipsis}`;
+  const rawEvidenceStart = leadingEllipsis.length + start - snippetStart;
+  const rawEvidenceEnd = rawEvidenceStart + end - start;
+  let context = "";
+  let contextEvidenceStart = 0;
+  let contextEvidenceEnd = 0;
+  let whitespaceOpen = false;
+
+  for (let index = 0; index <= snippet.length; index += 1) {
+    if (index === rawEvidenceStart) contextEvidenceStart = context.length;
+    if (index === rawEvidenceEnd) contextEvidenceEnd = context.length;
+    if (index === snippet.length) break;
+
+    const character = snippet[index];
+    if (/\s/u.test(character)) {
+      if (!whitespaceOpen) context += " ";
+      whitespaceOpen = true;
+    } else {
+      context += character;
+      whitespaceOpen = false;
+    }
+  }
+
+  const leadingWhitespace = context.length - context.trimStart().length;
+  context = context.trim();
+  contextEvidenceStart = Math.max(0, contextEvidenceStart - leadingWhitespace);
+  contextEvidenceEnd = Math.min(
+    context.length,
+    Math.max(contextEvidenceStart, contextEvidenceEnd - leadingWhitespace),
+  );
+  return { context, contextEvidenceStart, contextEvidenceEnd };
 }
 
-export function extractFacts(text: string): Fact[] {
+function extractFactsInternal(text: string, maxFacts?: number): Fact[] {
+  if (
+    maxFacts !== undefined &&
+    (!Number.isSafeInteger(maxFacts) || maxFacts < 0)
+  ) {
+    throw new RangeError("comparison-limit-exceeded");
+  }
+
   const facts: Fact[] = [];
   const scan = makeScanView(text);
+  const occupied = new Uint8Array(text.length);
+  const acceptedEnds = new Set<number>();
 
   for (const definition of PATTERNS) {
     definition.pattern.lastIndex = 0;
@@ -652,14 +749,17 @@ export function extractFacts(text: string): Fact[] {
         definition,
         scan,
         matchedScanStart,
-        facts,
+        acceptedEnds,
       )
         ? matchedScanStart + 1
         : matchedScanStart;
       const start = scan.starts[scanStart] ?? 0;
       const end = scan.ends[scanEnd - 1] ?? start;
       const raw = text.slice(start, end);
-      if (overlaps(start, end, facts)) continue;
+      if (overlaps(start, end, occupied)) continue;
+      if (maxFacts !== undefined && facts.length >= maxFacts) {
+        throw new RangeError("comparison-limit-exceeded");
+      }
 
       facts.push({
         id: `${definition.kind}-${start}-${end}`,
@@ -669,12 +769,18 @@ export function extractFacts(text: string): Fact[] {
         valid: definition.validate?.(raw) ?? true,
         start,
         end,
-        context: makeContext(text, start, end),
+        ...makeContext(text, start, end),
       });
+      occupied.fill(1, start, end);
+      acceptedEnds.add(end);
     }
   }
 
   return facts.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+export function extractFacts(text: string): Fact[] {
+  return extractFactsInternal(text);
 }
 
 function textFingerprint(value: string) {
@@ -776,19 +882,54 @@ function nearbyTokenWeights(text: string, fact: Fact) {
   return weights;
 }
 
-function localSegmentFingerprint(text: string, fact: Fact) {
+interface LocalSegmentBoundaries {
+  starts: number[];
+  ends: number[];
+}
+
+function buildLocalSegmentBoundaries(text: string): LocalSegmentBoundaries {
   const boundary = /[。！？.!?；;，,\/|、•·—–\t\n]|\band\b|和/giu;
-  const before = text.slice(0, fact.start);
-  const after = text.slice(fact.end);
-  let start = 0;
-  for (const match of before.matchAll(boundary)) {
-    start = (match.index ?? 0) + match[0].length;
+  const starts: number[] = [];
+  const ends: number[] = [];
+  for (const match of text.matchAll(boundary)) {
+    const start = match.index ?? 0;
+    starts.push(start);
+    ends.push(start + match[0].length);
   }
-  boundary.lastIndex = 0;
-  const nextBoundary = boundary.exec(after);
-  const end = nextBoundary
-    ? fact.end + (nextBoundary.index ?? 0)
-    : text.length;
+  return { starts, ends };
+}
+
+function lowerBound(values: number[], target: number) {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (values[middle] < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function upperBound(values: number[], target: number) {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (values[middle] <= target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function localSegmentFingerprint(
+  text: string,
+  fact: Fact,
+  boundaries: LocalSegmentBoundaries,
+) {
+  const previousBoundary = upperBound(boundaries.ends, fact.start) - 1;
+  const nextBoundary = lowerBound(boundaries.starts, fact.end);
+  const start = previousBoundary >= 0 ? boundaries.ends[previousBoundary] : 0;
+  const end = boundaries.starts[nextBoundary] ?? text.length;
   return textFingerprint(
     `${text.slice(start, fact.start)} ${text.slice(fact.end, end)}`,
   );
@@ -816,10 +957,14 @@ interface ContextFeatures {
   nearbyWeights: Map<string, number>;
 }
 
-function contextFeatures(text: string, fact: Fact): ContextFeatures {
+function contextFeatures(
+  text: string,
+  fact: Fact,
+  boundaries: LocalSegmentBoundaries,
+): ContextFeatures {
   return {
     broadPairs: bigrams(contextFingerprint(fact)),
-    localPairs: bigrams(localSegmentFingerprint(text, fact)),
+    localPairs: bigrams(localSegmentFingerprint(text, fact, boundaries)),
     nearbyWeights: nearbyTokenWeights(text, fact),
   };
 }
@@ -945,17 +1090,24 @@ function pairFacts(
 ) {
   const pairs = new Map<string, Fact>();
   const kinds = new Set(sourceFacts.map((fact) => fact.kind));
+  let sourceBoundaries: LocalSegmentBoundaries | undefined;
+  let revisionBoundaries: LocalSegmentBoundaries | undefined;
 
   for (const kind of kinds) {
     const sources = sourceFacts.filter((fact) => fact.kind === kind);
     const revisions = revisionFacts.filter((fact) => fact.kind === kind);
     if (!revisions.length) continue;
 
+    const currentSourceBoundaries =
+      sourceBoundaries ??= buildLocalSegmentBoundaries(sourceText);
+    const currentRevisionBoundaries =
+      revisionBoundaries ??= buildLocalSegmentBoundaries(revisionText);
+
     const sourceFeatures = sources.map((fact) =>
-      contextFeatures(sourceText, fact),
+      contextFeatures(sourceText, fact, currentSourceBoundaries),
     );
     const revisionFeatures = revisions.map((fact) =>
-      contextFeatures(revisionText, fact),
+      contextFeatures(revisionText, fact, currentRevisionBoundaries),
     );
 
     const contextScores = sourceFeatures.map((sourceFeature) =>
@@ -1096,8 +1248,7 @@ function findRequiredInView(view: RequiredSearchView, normalized: string) {
 
 function requiredLines(required: string) {
   const seen = new Set<string>();
-  return required
-    .split(/\r?\n/u)
+  return splitKeepFactsRequiredLines(required)
     .map((raw) => ({ raw: raw.trim(), normalized: normalizeRequired(raw) }))
     .filter(({ raw }) => Boolean(raw))
     .filter(({ normalized }) => {
@@ -1143,9 +1294,13 @@ function compareRequiredFacts(
       valid: true,
       start: presentInSource ? sourceStart : 0,
       end: sourceEnd,
-      context: presentInSource
+      ...(presentInSource
         ? makeContext(source, sourceStart, sourceEnd)
-        : raw,
+        : {
+            context: raw,
+            contextEvidenceStart: 0,
+            contextEvidenceEnd: raw.length,
+          }),
     };
     const sourceMatch = presentInSource
       ? { ...base, raw: source.slice(sourceStart, sourceEnd) }
@@ -1163,7 +1318,7 @@ function compareRequiredFacts(
               raw: revision.slice(revisionStart, revisionEnd),
               start: revisionStart,
               end: revisionEnd,
-              context: makeContext(revision, revisionStart, revisionEnd),
+              ...makeContext(revision, revisionStart, revisionEnd),
             }
           : undefined,
       };
@@ -1188,7 +1343,7 @@ function compareRequiredFacts(
         raw: revision.slice(revisionStart, revisionEnd),
         start: revisionStart,
         end: revisionEnd,
-        context: makeContext(revision, revisionStart, revisionEnd),
+        ...makeContext(revision, revisionStart, revisionEnd),
       },
     };
   });
@@ -1198,9 +1353,10 @@ export function compareFacts(
   source: string,
   revision: string,
   required = "",
+  options: CompareFactsOptions = {},
 ): FactComparison {
-  const sourceFacts = extractFacts(source);
-  const revisionFacts = extractFacts(revision);
+  const sourceFacts = extractFactsInternal(source, options.maxFactsPerSide);
+  const revisionFacts = extractFactsInternal(revision, options.maxFactsPerSide);
   const matchedRevisionIds = new Set<string>();
   const pairs = pairFacts(sourceFacts, revisionFacts, source, revision);
 

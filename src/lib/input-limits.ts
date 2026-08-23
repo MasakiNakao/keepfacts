@@ -25,6 +25,15 @@ export interface KeepFactsInputLimitViolation {
   itemIndex?: number;
 }
 
+/**
+ * Split the user-authored must-preserve list using every JavaScript line
+ * terminator. Textareas normally expose LF, while imported text can still
+ * contain CR-only or Unicode line separators.
+ */
+export function splitKeepFactsRequiredLines(required: string) {
+  return required.split(/\r\n|[\n\r\u2028\u2029]/u);
+}
+
 export function getKeepFactsInputLimitViolation(
   input: KeepFactsInput,
 ): KeepFactsInputLimitViolation | undefined {
@@ -56,8 +65,7 @@ export function getKeepFactsInputLimitViolation(
     };
   }
 
-  const requiredItems = input.required
-    .split(/\r?\n/u)
+  const requiredItems = splitKeepFactsRequiredLines(input.required)
     .map((item, itemIndex) => ({ item: item.trim(), itemIndex }))
     .filter(({ item }) => Boolean(item));
   if (requiredItems.length > KEEPFACTS_MAX_REQUIRED_ITEMS) {

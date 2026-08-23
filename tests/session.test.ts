@@ -236,6 +236,37 @@ test("round-trips an NFKC-expanded required review key", () => {
   });
 });
 
+test("derives extended review keys from imported Unicode line separators", () => {
+  const expanded = "ﬃ".repeat(KEEPFACTS_SESSION_MAX_REQUIRED_ITEM_LENGTH);
+  const required = `preserved\u2028${expanded}`;
+  const input = { source: "preserved", revision: "preserved", required };
+  const comparison = compareFacts(input.source, input.revision, input.required);
+  const item = getReviewItems(comparison).find(
+    (candidate) => candidate.scope === "required",
+  );
+  assert.ok(item);
+  assert.match(item.key, /^required:required-1-/u);
+  assert.ok(item.key.length > 1_024);
+
+  const session = validSession();
+  session.editor = input;
+  session.result = {
+    input,
+    reviewRecords: [{ key: item.key, decision: "confirmed" }],
+  };
+
+  const parsed = parseKeepFactsSession(serializeKeepFactsSession(session));
+  assert.equal(parsed.result?.reviewRecords[0].key, item.key);
+  const reconciled = reconcileKeepFactsReviewRecords(
+    parsed.result?.reviewRecords ?? [],
+    comparison,
+  );
+  assert.equal(reconciled.restoredCount, 1);
+  assert.deepEqual(reconciled.reviewRecords[item.key], {
+    decision: "confirmed",
+  });
+});
+
 test("rejects review keys beyond the normalization-derived boundary", () => {
   const ordinarySession = validSession();
   ordinarySession.result!.reviewRecords[0].key = "k".repeat(1_025);

@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import {
   KEEPFACTS_MAX_REQUIRED_ITEM_LENGTH,
-  KEEPFACTS_MAX_REQUIRED_LENGTH,
   KEEPFACTS_MAX_TEXT_LENGTH,
 } from "../../src/lib/input-limits";
 
@@ -402,15 +401,16 @@ test("uses one accessible review queue and moves focus to the next pending item"
   const nextPending = page.getByRole("button", { name: "下一条待处理" });
   await nextPending.click();
   await expect(findings.automatic.getByRole("heading", { level: 4 })).toBeFocused();
-  await findings.automatic
-    .getByRole("radio", { name: "确认需处理" })
-    .check();
-  await nextPending.click();
+  const confirmed = findings.automatic.getByRole("radio", {
+    name: "确认需处理",
+  });
+  await confirmed.focus();
+  await page.keyboard.press("Space");
 
   const nextHeading = findings.required.getByRole("heading", { level: 4 });
   await expect(nextHeading).toBeFocused();
   await expect(page.getByTestId("review-announcement")).toContainText(
-    "已移动到第 1 条待处理：必保项",
+    "还剩 2 项待处理",
   );
   await expect
     .poll(async () => {
@@ -429,6 +429,103 @@ test("uses one accessible review queue and moves focus to the next pending item"
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 
+});
+
+test("filters and searches review evidence without changing stable item numbers", async ({
+  page,
+}) => {
+  const findings = await createThreeWayReview(page);
+  const queue = page.getByRole("list", { name: "人工审阅队列" });
+
+  await expect(page.locator(".review-evidence mark")).toHaveCount(4);
+  await expect(findings.automatic.getByRole("heading", { level: 4 })).toContainText(
+    /^1\./,
+  );
+  await findings.automatic
+    .getByRole("radio", { name: "确认需处理" })
+    .check();
+
+  await page.getByRole("button", { name: /确认需处理.*1/ }).click();
+  await expect(queue.locator(":scope > li")).toHaveCount(1);
+  await expect(queue.getByRole("heading", { level: 4 })).toContainText(/^1\./);
+
+  await page.getByRole("button", { name: /^全部/ }).click();
+  const search = page.getByRole("searchbox", { name: "查找审阅项" });
+  await search.fill("2026-09-15");
+  await expect(queue.locator(":scope > li")).toHaveCount(2);
+  await expect(
+    queue
+      .locator(':scope > li[data-review-scope="added"]')
+      .getByRole("heading", { level: 4 }),
+  ).toContainText(/^3\./);
+  await search.fill("not-present-anywhere");
+  await expect(
+    page.getByRole("heading", { name: "没有符合条件的审阅项" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "显示全部审阅项" }).click();
+  await expect(queue.locator(":scope > li")).toHaveCount(3);
+  await expect(page.getByTestId("review-visible-count")).toHaveText(
+    "显示 3/3 项",
+  );
+});
+
+test("keeps focus and control relationships valid when a decision hides its card", async ({
+  page,
+}) => {
+  const findings = await createThreeWayReview(page);
+  await findings.automatic
+    .getByRole("radio", { name: "确认需处理" })
+    .check();
+  await page.getByRole("button", { name: /确认需处理.*1/ }).click();
+
+  const filteredCard = page.locator(
+    '.review-queue > li[data-review-scope="source"]',
+  );
+  await expect(filteredCard).toHaveCount(1);
+  const accepted = filteredCard.getByRole("radio", { name: "改写可接受" });
+  await accepted.focus();
+  await page.keyboard.press("Space");
+
+  const search = page.getByRole("searchbox", { name: "查找审阅项" });
+  await expect(search).toBeFocused();
+  await expect(page.getByRole("list", { name: "人工审阅队列" })).toHaveCount(0);
+  await expect(page.locator(".review-filter-tabs button").first()).not.toHaveAttribute(
+    "aria-controls",
+  );
+
+  await page.getByRole("button", { name: "显示全部审阅项" }).click();
+  await expect(search).toBeFocused();
+  await expect(page.getByRole("list", { name: "人工审阅队列" })).toBeVisible();
+  await expect(page.locator(".review-filter-tabs button").first()).toHaveAttribute(
+    "aria-controls",
+    "review-queue",
+  );
+});
+
+test("highlights the exact repeated and whitespace-normalized evidence", async ({
+  page,
+}) => {
+  await setComparison(
+    page,
+    "Alpha has 100 users. Beta has 100 users. Weight is 100   kg.",
+    "Alpha has 100 users. Beta has 90 users. Weight is 90 kg.",
+  );
+  await page.getByRole("button", { name: /对照两版/ }).click();
+
+  const sourceContexts = page.locator(
+    '.review-queue > li[data-review-scope="source"] .review-evidence > div:first-child p',
+  );
+  await expect(sourceContexts).toHaveCount(2);
+
+  const repeatedMark = sourceContexts.nth(0).locator("mark");
+  await expect(repeatedMark).toHaveText("100");
+  expect(
+    await repeatedMark.evaluate(
+      (element) => element.previousSibling?.textContent ?? "",
+    ),
+  ).toMatch(/Beta has $/u);
+
+  await expect(sourceContexts.nth(1).locator("mark")).toHaveText("100 kg");
 });
 
 test("confirms destructive example and clear actions after a decision", async ({
@@ -668,13 +765,50 @@ test("rejects a malformed session without changing current work", async ({
   });
 
   await expect(page.getByRole("alert")).toHaveText(
-    "无法导入该会话文件；当前内容未更改。",
+    "会话文件内容损坏或结构不符合格式，无法导入；当前内容未更改。",
   );
   await expect(page.getByRole("button", { name: "导入会话" })).toBeEnabled();
   await expect(source).toHaveValue(originalSource);
   await expect(revision).toHaveValue(originalRevision);
   expect(await queue.textContent()).toBe(originalQueue);
   expect(dialogs).toBe(0);
+
+  await page.getByRole("button", { name: "English" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("classifies an imported session that exceeds the fact limit", async ({
+  page,
+}) => {
+  const originalSource = await page.getByRole("textbox", { name: "原文" }).inputValue();
+  const dense = Array.from(
+    { length: 1_001 },
+    (_, index) => `Item ${index} is ${100_000 + index}.`,
+  ).join(" ");
+  const input = { source: dense, revision: dense, required: "" };
+  const session = {
+    format: "keepfacts.session",
+    schemaVersion: 1,
+    exportedAt: "2026-08-24T00:00:00.000Z",
+    generator: { appVersion: packageMetadata.version, commitSha: "local" },
+    privacy: { containsFullText: true, encrypted: false },
+    locale: "zh",
+    editor: input,
+    result: { input, reviewRecords: [] },
+  };
+
+  await page.locator('.session-actions input[type="file"]').setInputFiles({
+    name: "too-many-facts.keepfacts.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(session), "utf8"),
+  });
+
+  await expect(page.getByRole("alert")).toHaveText(
+    "会话内容超过当前版本的安全处理上限，无法导入；当前内容未更改。",
+  );
+  await expect(page.getByRole("textbox", { name: "原文" })).toHaveValue(
+    originalSource,
+  );
 });
 
 test("marks a new comparison from an imported draft as unexported work", async ({
@@ -1084,23 +1218,27 @@ test("keeps stale results, disables exports, and recovers", async ({ page }) => 
   await expect(page.getByRole("button", { name: "下载草稿" })).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "下一条待处理" }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
+  const inPlaceRecheck = page.locator(
+    'button[data-review-action="recheck"]',
+  );
+  await expect(inPlaceRecheck).toHaveText("重新核对当前文本");
+  await expect(inPlaceRecheck).toBeEnabled();
   await expect(
     page.getByRole("button", { name: "复制修复清单" }),
   ).toBeDisabled();
   await expect(reviewQueue.getByRole("radio").first()).toBeDisabled();
   await expect(reviewQueue.getByRole("textbox").first()).toBeDisabled();
 
-  const compareButton = page.locator(".compare-button");
-  await compareButton.click();
-  await expect(compareButton).toHaveAttribute("aria-busy", "true");
+  await inPlaceRecheck.click();
+  await expect(inPlaceRecheck).toHaveAttribute("aria-busy", "true");
   await source.fill(`${await source.inputValue()} 再新增 43。`);
-  await expect(compareButton).toHaveAttribute("aria-busy", "false");
+  await expect(inPlaceRecheck).toHaveAttribute("aria-busy", "false");
   await page.waitForTimeout(300);
   await expect(page.getByText(/上次核对结果/)).toBeVisible();
 
   await page.unroute("**/*compare.worker*.js");
-  await compareButton.click();
+  await inPlaceRecheck.click();
   await expect(page.getByRole("button", { name: "复制草稿报告" })).toBeEnabled();
   await expect(page.getByText(/上次核对结果/)).toHaveCount(0);
   await expect(
@@ -1115,16 +1253,16 @@ test("rejects structural input limits atomically before compare or session expor
   const revision = page.getByRole("textbox", { name: "改写稿" });
   const required = page.locator(".required-panel textarea");
   await expect(source).toHaveAttribute(
-    "maxlength",
-    String(KEEPFACTS_MAX_TEXT_LENGTH),
+    "aria-describedby",
+    "source-character-limit",
   );
   await expect(revision).toHaveAttribute(
-    "maxlength",
-    String(KEEPFACTS_MAX_TEXT_LENGTH),
+    "aria-describedby",
+    "revision-character-limit",
   );
   await expect(required).toHaveAttribute(
-    "maxlength",
-    String(KEEPFACTS_MAX_REQUIRED_LENGTH),
+    "aria-describedby",
+    "required-character-limit",
   );
 
   const originalSource = await source.inputValue();
@@ -1137,18 +1275,13 @@ test("rejects structural input limits atomically before compare or session expor
   });
 
   await forceTextareaValue(source, "A".repeat(KEEPFACTS_MAX_TEXT_LENGTH + 1));
-  await expect.poll(async () => (await source.inputValue()).length).toBe(
-    KEEPFACTS_MAX_TEXT_LENGTH + 1,
-  );
-  await page.locator(".compare-button").click();
+  await expect(source).toHaveValue(originalSource);
   await expect(page.getByRole("alert")).toHaveText(
-    "原文最多 250,000 个字符，请缩短后重试。 上次结果已保留。",
+    "此次输入会使“原文”超过 250,000 个字符，已取消输入；当前内容未更改。",
   );
   expect(workerRequests).toBe(0);
   expect(await previousQueue.textContent()).toBe(previousQueueText);
-  await expect(page.getByText(/上次核对结果/)).toBeVisible();
 
-  await source.fill(originalSource);
   const requiredPanel = page.locator(".required-panel");
   if (!(await requiredPanel.evaluate((element) => (element as HTMLDetailsElement).open))) {
     await requiredPanel.locator("summary").click();
@@ -1180,6 +1313,47 @@ test("rejects structural input limits atomically before compare or session expor
   );
   expect(dialogs).toBe(0);
   expect(await previousQueue.textContent()).toBe(previousQueueText);
+});
+
+test("rejects an oversized user insertion instead of silently truncating it", async ({
+  page,
+}) => {
+  const source = page.getByRole("textbox", { name: "原文" });
+  const acceptedLength = KEEPFACTS_MAX_TEXT_LENGTH - 2;
+  await forceTextareaValue(source, "A".repeat(acceptedLength));
+  await source.focus();
+  await source.press("End");
+  await page.keyboard.insertText("BBBB");
+
+  await expect.poll(async () => (await source.inputValue()).length).toBe(
+    acceptedLength,
+  );
+  await expect(page.getByRole("alert")).toHaveText(
+    "此次输入会使“原文”超过 250,000 个字符，已取消输入；当前内容未更改。",
+  );
+  await expect(page.locator("#source-character-limit")).toHaveText(
+    "249,998 / 250,000 字符",
+  );
+
+  await source.evaluate((element) => {
+    const textarea = element as HTMLTextAreaElement;
+    textarea.setSelectionRange(textarea.value.length - 2, textarea.value.length);
+  });
+  const pastePrevented = await source.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.setData("text/plain", "BBBBB");
+    return !element.dispatchEvent(
+      new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: transfer,
+      }),
+    );
+  });
+  expect(pastePrevented).toBe(true);
+  await expect.poll(async () => (await source.inputValue()).length).toBe(
+    acceptedLength,
+  );
 });
 
 test("rejects 1,001 extracted facts per side without replacing the old result", async ({
@@ -1374,6 +1548,9 @@ test("does not overflow and keeps review controls usable at either viewport", as
   expect(toolbarBox).not.toBeNull();
   expect(toolbarBox!.x).toBeGreaterThanOrEqual(0);
   expect(toolbarBox!.x + toolbarBox!.width).toBeLessThanOrEqual(viewportWidth);
+  if (viewportWidth <= 520) {
+    expect(toolbarBox!.height).toBeLessThanOrEqual(96);
+  }
 
   const actionButtons = toolbar.getByRole("button");
   for (let index = 0; index < (await actionButtons.count()); index += 1) {
@@ -1395,7 +1572,10 @@ test("paginates large result sets and moves focus to the new page", async ({ pag
   await page.getByRole("button", { name: /对照两版/ }).click();
   await expect(page.getByRole("heading", { name: "核对结果" })).toBeFocused();
   await openMachineEvidence(page);
-  await page.getByRole("button", { name: /全部/ }).click();
+  await page
+    .getByTestId("machine-evidence")
+    .getByRole("button", { name: /^全部/ })
+    .click();
 
   const pagination = page.getByRole("navigation", { name: "自动事实明细" });
   await expect(pagination).toContainText(/第 1\/\d+ 页/);
@@ -1423,4 +1603,32 @@ test("paginates large result sets and moves focus to the new page", async ({ pag
   await expect(requiredPagination).toContainText("第 2/2 页，共 55 项");
   await expect(page.locator(".required-result-list .result-card")).toHaveCount(5);
   await expect(page.getByRole("heading", { name: "必须保留检查" })).toBeFocused();
+});
+
+test("paginates a large human-review queue with stable global numbering", async ({
+  page,
+}) => {
+  const source = Array.from(
+    { length: 25 },
+    (_, index) =>
+      `Item ${String.fromCharCode(65 + index)} has ${1000 + index} users.`,
+  ).join("\n");
+  const revision = Array.from(
+    { length: 25 },
+    (_, index) =>
+      `Item ${String.fromCharCode(65 + index)} has ${2000 + index} users.`,
+  ).join("\n");
+  await setComparison(page, source, revision);
+  await page.getByRole("button", { name: /对照两版/ }).click();
+
+  const queue = page.getByRole("list", { name: "人工审阅队列" });
+  const pagination = page.getByRole("navigation", { name: "人工审阅队列" });
+  await expect(queue.locator(":scope > li")).toHaveCount(20);
+  await expect(pagination).toContainText("第 1/2 页，共 25 项");
+  await pagination.getByRole("button", { name: "下一页" }).click();
+  await expect(queue.locator(":scope > li")).toHaveCount(5);
+  await expect(queue.getByRole("heading", { level: 4 }).first()).toContainText(
+    /^21\./,
+  );
+  await expect(page.getByRole("heading", { name: "人工审阅进度" })).toBeFocused();
 });

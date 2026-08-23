@@ -5,6 +5,7 @@ import {
   KEEPFACTS_MAX_REQUIRED_ITEMS,
   KEEPFACTS_MAX_REQUIRED_LENGTH,
   KEEPFACTS_MAX_TEXT_LENGTH,
+  splitKeepFactsRequiredLines,
   type KeepFactsInput,
   type KeepFactsInputLimitViolation,
 } from "./input-limits.ts";
@@ -236,7 +237,7 @@ function reviewKeyLimitsForInput(input: KeepFactsSessionInput) {
   const extendedRequiredKeys = new Set<string>();
   const seen = new Set<string>();
   let index = 0;
-  for (const item of input.required.split(/\r?\n/u)) {
+  for (const item of splitKeepFactsRequiredLines(input.required)) {
     const raw = item.trim();
     if (!raw) continue;
     const normalized = raw

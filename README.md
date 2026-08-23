@@ -58,42 +58,51 @@ It is intentionally narrow:
 - its retention percentage covers only facts extracted from the source, not
   every factual statement the document may contain.
 
-## Project status and v0.4.0 maintenance scope
+## Project status and v0.5.0 scope
 
-v0.4.0 is the recommended tagged baseline for the documented browser workflow.
+v0.5.0 is the recommended tagged baseline for the documented browser workflow.
 It remains a pre-1.0 (`0.x`) release: this is not a KeepFacts v1 declaration or
 a promise of permanent API, file-format, or recognition compatibility. Only
 the latest tag is supported on a best-effort basis, with no LTS branch or
 response-time SLA. See [Privacy and limitations](#privacy-and-limitations) and
 the [security policy](SECURITY.md).
 
-This release makes the review workflow safer and easier to finish. Human-review
-items now show bilateral evidence directly in the queue; complete machine
-details remain available in one collapsed disclosure. Decision labels explain
-the difference between a confirmed issue, an intentional acceptable change,
-and an item excluded from this delivery. Draft and completed reports have
-distinct controls and timestamped filenames.
+This release adds a paginated local review workbench for longer queues.
+Reviewers can filter by decision and search facts, bilateral context, notes,
+or expected fixes; matched evidence is highlighted in place. Item numbers stay
+stable when moving to the next pending finding, the human queue renders 20
+items per page instead of the full queue, and the mobile sticky surface keeps
+only progress and the current primary action. An outdated result can be
+rechecked from deep inside the queue.
 
-KeepFacts still keeps working state only in page memory. v0.4.0 makes that
-constraint visible: user-created work is marked as unexported, receives a
-best-effort native close/refresh warning request, and changes to a checkpoint
-state after a session is imported or exported. A session remains strict,
-versioned, unencrypted plaintext. Schema v1 identifies its data format; it does
-not make the product v1. See [Session format v1](docs/session-format-v1.md).
+Every editor now shows current characters against its limit. An insertion or
+paste that would exceed the limit is rejected as one operation with a visible
+explanation instead of letting the browser silently truncate the document.
+Review-record migration produces visible feedback, and session import safely
+distinguishes filename-extension, size, unsupported-schema, structural, and
+processing-limit failures without replacing current work. Sessions remain strict,
+versioned, unencrypted plaintext; schema v1 is a data format, not a KeepFacts
+v1 declaration. See [Session format v1](docs/session-format-v1.md).
 
-The release also fixes specific correctness boundaries: mixed Chinese/Latin
-must-preserve terms, compact hyphenated ranges, review decisions whose evidence
-moves to another subject, NFKC-expanded generated session keys, and invalid
-dates or times introduced only by the rewrite. These fixes do not add a new
-fact type or expand either public corpus. They are regression evidence for the
-named cases, not a general claim of broader recognition or improved accuracy.
-A 100% extracted-fact retention result still does not mean that every claim is
-true, every fact was recognized, or the full meaning was preserved.
+The deterministic engine adds explicitly scoped format support and boundary
+fixes for suffix currency codes and symbols, unambiguous day-first English
+dates, positive measurements wrapped in parentheses, and must-preserve lists
+using CR, U+2028, or U+2029 separators. Malformed grouped money and percentage
+strings are no longer partially extracted. Scans of adversarial long numeric,
+percentage, and email-like input are bounded, and the Worker enforces its fact
+limit before allocating a dense matching matrix. The public validation file
+grows from 37 to 42 named cases.
 
-Future maintenance focuses on security, correctness, compatibility,
-accessibility, documentation, and release reliability. A new capability or
-recognizer requires a separately scoped release and evidence appropriate to
-its claim.
+Tag deployment now follows successful tag CI from the default-branch workflow
+context. The tag, CI SHA, checkout SHA, injected build SHA, and reachability
+from `origin/main` must agree, while build and Pages deployment permissions are
+separated. The first real automatic deployment still needs proof from this
+tag's GitHub Actions run.
+
+These guarantees cover the named cases only. The manually annotated evaluation
+corpus was not expanded, and a 100% extracted-fact retention result still does
+not mean every claim is true, every fact was recognized, or full-document
+meaning was preserved.
 
 ## Current checks
 
@@ -110,7 +119,8 @@ its claim.
   separately from extracted-fact retention
 - One human-review queue across automatic warnings, must-preserve anomalies,
   and newly added facts, with decisions, optional notes, optional expected
-  fixes, inline bilateral evidence, and a next-pending action
+  fixes, highlighted bilateral evidence, decision filters, full-record search,
+  stable item numbers, and a next-pending action
 - A confirmed-only Markdown fix list plus full traceable reports with bilateral
   context, human records, app version, build commit, review-state label, and a
   UTC export timestamp
@@ -120,7 +130,8 @@ its claim.
 - Explicit local import/export of versioned, unencrypted `.keepfacts.json`
   sessions, with an unexported-work warning and checkpoint state; no automatic
   persistence or upload
-- Fifty-item pagination for large automatic and must-preserve result sets
+- Fifty-item pagination for large automatic and must-preserve result sets, and
+  twenty-item pagination for the human-review queue
 - Native radio-group decisions and focus-managed pagination, covered by
   responsive keyboard and browser accessibility checks
 

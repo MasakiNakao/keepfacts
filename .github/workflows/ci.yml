@@ -13,12 +13,14 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       VITE_COMMIT_SHA: ${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -30,6 +32,8 @@ jobs:
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Verify release metadata, unit tests, build, and browser tests
+        env:
+          KEEPFACTS_REQUIRE_ORIGIN_MAIN: ${{ github.ref_type == 'tag' }}
         run: npm run check:all
       - name: Audit dependencies
         run: npm audit --audit-level=high

@@ -93,6 +93,43 @@ test("recognizes prefixed Chinese currency names and anchors money suffixes", ()
   }
 });
 
+test("recognizes currency codes and symbols after amounts without partial matches", () => {
+  for (const [raw, normalized] of [
+    ["100 USD", "USD:100"],
+    ["100m EUR", "EUR:100000000"],
+    ["100 CNY", "CNY:100"],
+    ["100 JPY", "JPY:100"],
+    ["100 C$", "CAD:100"],
+    ["100 HK$", "HKD:100"],
+    ["100 £", "GBP:100"],
+    ["(100 CAD)", "CAD:-100"],
+  ] as const) {
+    const fact = extractFacts(raw)[0];
+    assert.equal(fact?.kind, "money", raw);
+    assert.equal(fact?.raw, raw, raw);
+    assert.equal(fact?.normalized, normalized, raw);
+  }
+
+  const changedCurrency = compareFacts("Price 100 USD.", "Price 100 EUR.");
+  assert.equal(changedCurrency.preservedCount, 0);
+  assert.equal(changedCurrency.reviewCount, 1);
+  assert.equal(changedCurrency.addedCount, 0);
+
+  for (const malformed of [
+    "Amount 1,23 USD.",
+    "金额1,23元。",
+    "USD 1,23",
+    "USD 123,45",
+    "Growth 1,23%.",
+  ]) {
+    assert.equal(extractFacts(malformed).length, 0, malformed);
+  }
+  assert.equal(
+    extractFacts("$100million").some((fact) => fact.kind === "money"),
+    false,
+  );
+});
+
 test("preserves signs and compound currency identity", () => {
   assert.deepEqual(
     extractFacts("Delta +5, ＋6, and ﹢7.")
@@ -170,6 +207,18 @@ test("treats dotted calendar years as dates before bare versions", () => {
   assert.equal(invalid.sourceFacts[0]?.reviewReason, "invalid");
 });
 
+test("normalizes unambiguous day-first English dates", () => {
+  const comparison = compareFacts(
+    "Deadline is 15 September 2026.",
+    "Deadline is Sep 15th, 2026.",
+  );
+
+  assert.equal(comparison.preservedCount, 1);
+  assert.equal(comparison.reviewCount, 0);
+  assert.equal(comparison.sourceFacts[0]?.kind, "date");
+  assert.equal(comparison.sourceFacts[0]?.normalized, "2026-09-15");
+});
+
 test("flags recognizable invalid times", () => {
   for (const value of ["25:99", "25点99分", "13:00 pm"]) {
     const comparison = compareFacts(`Starts ${value}.`, `Starts ${value}.`);
@@ -195,9 +244,81 @@ test("extracts full-width numeric facts without changing source offsets", () => 
   }
 });
 
+test("keeps exact evidence offsets after context whitespace normalization", () => {
+  const source =
+    "Alpha has 100 users. Beta has 100 users. Weight is 100   kg.";
+  const facts = extractFacts(source);
+  const repeated = facts.filter(
+    (fact) => fact.kind === "number" && fact.raw === "100",
+  )[1];
+  const measurement = facts.find(
+    (fact) => fact.kind === "measurement" && fact.raw === "100   kg",
+  );
+
+  assert.ok(repeated);
+  assert.equal(
+    repeated.context.slice(
+      repeated.contextEvidenceStart,
+      repeated.contextEvidenceEnd,
+    ),
+    "100",
+  );
+  assert.match(repeated.context.slice(0, repeated.contextEvidenceStart), /Beta has $/u);
+
+  assert.ok(measurement);
+  assert.equal(
+    measurement.context.slice(
+      measurement.contextEvidenceStart,
+      measurement.contextEvidenceEnd,
+    ),
+    "100 kg",
+  );
+});
+
 test("does not treat contractions and possessives as quoted facts", () => {
   const facts = extractFacts("Don't change Bob's 10 users.");
   assert.equal(facts.some((fact) => fact.kind === "quote"), false);
+});
+
+test("bounds email components without extracting invalid partial addresses", () => {
+  const overlongLocal = `${"a".repeat(65)}@example.com`;
+  const overlongTld = `hello@example.${"a".repeat(64)}`;
+
+  assert.equal(extractFacts(overlongLocal).some((fact) => fact.kind === "email"), false);
+  assert.equal(extractFacts(overlongTld).some((fact) => fact.kind === "email"), false);
+  assert.equal(
+    extractFacts("hello@example.com.")[0]?.normalized,
+    "hello@example.com",
+  );
+
+  for (const invalid of [
+    "hello@-example.com",
+    "hello@example..com",
+    `hello@${"a".repeat(64)}.com`,
+  ]) {
+    const email = extractFacts(invalid).find((fact) => fact.kind === "email");
+    assert.equal(email?.raw, invalid);
+    assert.equal(email?.valid, false);
+  }
+
+  const fullWidth = compareFacts(
+    "Contact hello＠example.com.",
+    "Contact HELLO@example.com.",
+  );
+  assert.equal(fullWidth.preservedCount, 1);
+  assert.equal(fullWidth.reviewCount, 0);
+});
+
+test("does not extract prefixed currency codes from inside identifiers", () => {
+  for (const value of ["MUSD100", "ledger_USD100", "xCAD 42"]) {
+    assert.equal(
+      extractFacts(value).some((fact) => fact.kind === "money"),
+      false,
+      value,
+    );
+  }
+  assert.equal(extractFacts("Budget: USD100.")[0]?.kind, "money");
+  assert.equal(extractFacts("预算USD100")[0]?.kind, "money");
 });
 
 test("matches reordered duplicates across natural separators", () => {
@@ -231,6 +352,24 @@ test("keeps comparison target ids one-to-one and totals internally consistent", 
   assert.equal(
     targetIds.length + comparison.addedFacts.length,
     extractFacts("Beta 30. Gamma 10. Alpha 20. Delta 40.").length,
+  );
+});
+
+test("validates optional fact limits and accepts an empty zero-limit comparison", () => {
+  for (const maxFactsPerSide of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(
+      () => compareFacts("", "", "", { maxFactsPerSide }),
+      /comparison-limit-exceeded/u,
+    );
+  }
+
+  assert.equal(
+    compareFacts("", "", "", { maxFactsPerSide: 0 }).sourceFacts.length,
+    0,
+  );
+  assert.throws(
+    () => compareFacts("Value 1.", "", "", { maxFactsPerSide: 0 }),
+    /comparison-limit-exceeded/u,
   );
 });
 
@@ -411,6 +550,16 @@ test("normalizes safe mass, length, duration, and range conversions", () => {
   assert.equal(comparison.reviewCount, 0);
 });
 
+test("treats measurement parentheses as grouping, not an accounting sign", () => {
+  const grouped = compareFacts("Weight is 5 kg.", "Weight is (5 kg).");
+  const explicitlyNegative = extractFacts("Weight is (-5 kg).")[0];
+
+  assert.equal(grouped.preservedCount, 1);
+  assert.equal(grouped.reviewCount, 0);
+  assert.equal(explicitlyNegative?.kind, "measurement");
+  assert.equal(explicitlyNegative?.normalized, "mass-g:-5000");
+});
+
 test("does not force unrelated single numbers into a possible match", () => {
   const comparison = compareFacts(
     "Invoice total is 10.",
@@ -445,6 +594,20 @@ test("checks user-defined must-preserve content line by line", () => {
   assert.equal(requiredFacts[0]?.status, "preserved");
   assert.equal(requiredFacts[1]?.status, "review");
   assert.equal(requiredFacts[1]?.reviewReason, "missing");
+});
+
+test("checks imported must-preserve lists across non-LF line endings", () => {
+  const required = "Alpha\rBeta\u2028Gamma\u2029Delta";
+  const comparison = compareFacts(
+    "Alpha Beta Gamma Delta",
+    "Alpha Beta Gamma",
+    required,
+  );
+
+  assert.equal(comparison.requiredCount, 4);
+  assert.equal(comparison.requiredPreservedCount, 3);
+  assert.equal(comparison.requiredMissingCount, 1);
+  assert.equal(countRequiredNotInSource("Alpha Beta Gamma Delta", required), 0);
 });
 
 test("deduplicates required content and avoids partial English-word matches", () => {

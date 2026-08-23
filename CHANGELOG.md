@@ -2,6 +2,90 @@
 
 All notable changes to KeepFacts will be documented here.
 
+## [0.5.0] - 2026-08-24
+
+### Added
+
+- Add decision filters and local search across review facts, bilateral context,
+  notes, and expected fixes. Matching evidence is highlighted in both the
+  primary human-review queue and the collapsed machine record.
+- Add visible editor limits and atomic insertion guards. Input that would
+  exceed an editor limit is rejected with a recovery message instead of being
+  silently truncated by the browser.
+- Add explicit, safe session-import messages for a wrong filename extension,
+  files above the byte limit, unsupported schemas, processing-limit failures,
+  and damaged or structurally invalid content.
+- Add public validation cases for suffix currencies, day-first English dates,
+  malformed grouped currency boundaries, and parenthesized measurements,
+  increasing the named validation set from 37 to 42 cases.
+
+### Changed
+
+- Keep human-review item numbers stable when moving to the next pending item;
+  navigation changes focus and the active filter without rotating the queue.
+- Paginate the human-review queue at 20 items while retaining 50-item pages for
+  automatic and must-preserve machine details. Derived item maps, order, search,
+  and summaries are memoized, and the full review queue is no longer rendered
+  on one page.
+- Reduce the mobile sticky review surface to progress, review state, and the
+  current primary action. Fix-list and report exports remain immediately below
+  it as non-sticky secondary actions.
+- Show comparison and conservative review-migration outcomes visibly as well
+  as through the live region. When edited input makes a deep result stale, the
+  sticky workspace offers an in-place recheck action.
+- Give pending, confirmed, acceptable, and excluded decisions distinct visual
+  semantics while preserving native radio groups, forced-colors support,
+  reduced motion, keyboard focus, and the existing paper / ink / green visual
+  identity.
+- Preserve a valid focus target when a filtered decision removes the current
+  card, and expose `aria-controls` only while the controlled review queue exists.
+
+### Fact engine and performance
+
+- Preserve currency identity for suffix forms such as `100 USD`, `100 C$`, and
+  `100 HK$`, and reject malformed grouped money or percentage fragments instead
+  of extracting a misleading suffix.
+- Recognize unambiguous day-first English dates such as `15 September 2026`.
+- Treat parentheses around measurements as grouping, while continuing to
+  recognize an explicit sign inside the parentheses.
+- Split must-preserve input on CR, LF, CRLF, U+2028, and U+2029 consistently in
+  editor limits, comparison, and schema-v1 review-key restoration.
+- Bound email, percentage, overlap, and local-context scans for adversarial long
+  input. The comparison Worker now performs one limited extraction per side and
+  fails before allocating the dense matching matrix when the fact limit is
+  exceeded.
+- Reject ASCII currency codes embedded inside identifiers while preserving
+  common Chinese-adjacent currency notation; validate email domain labels and
+  retain NFKC-equivalent full-width addresses.
+
+### Release safety
+
+- Trigger automatic Pages builds only after successful tag CI, using the
+  default-branch `workflow_run` context required by the existing
+  `github-pages` environment. The build checks out the verified tag commit and
+  requires the package tag, tag commit, CI SHA, checkout SHA, injected build
+  SHA, and `origin/main` ancestry to agree.
+- Keep repository code in a read-only build job; grant Pages and OIDC write
+  permissions only to the separate deployment job. Manual fallback deployment
+  remains restricted to `main` and an existing matching release tag.
+- Add tests for trusted release identity, fail-closed ancestry checks, and the
+  workflow permission/event contract.
+
+### Scope and evidence
+
+- v0.5.0 expands format support only for the named cases above; it does not add
+  a new fact category or claim full-document understanding.
+- The 42-case public validation file, 104 Node tests, 76 passing browser checks
+  plus two intentional cross-project skips, and performance regressions cover
+  named behavior. The manually annotated
+  evaluation corpus remains unchanged, so passing it is not evidence of
+  broader real-world extraction coverage.
+- Session schema remains version 1. This product release does not make
+  KeepFacts a v1 product or promise permanent compatibility.
+- Maintenance policy now reserves patch releases for fixes, accessibility,
+  documentation, compatibility, and release infrastructure; future feature or
+  recognizer expansion requires a separately evidenced minor release.
+
 ## [0.4.0] - 2026-08-24
 
 ### Changed
